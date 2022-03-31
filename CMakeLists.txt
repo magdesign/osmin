@@ -133,6 +133,7 @@ find_package(Qt5Svg REQUIRED)
 find_package(Qt5Network REQUIRED)
 find_package(Qt5Sensors REQUIRED)
 find_package(Qt5Multimedia REQUIRED)
+find_package(Qt5RemoteObjects REQUIRED)
 
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_STANDARD 17)
@@ -149,6 +150,9 @@ set(osmin_SOURCES src/osmin.cpp src/converter.cpp src/platformextras.cpp
     src/tracker.cpp
     src/compass/genericcompass.cpp
     src/compass/plugin.cpp
+    src/service.cpp
+    src/servicemessenger.cpp
+    src/serviceclient.cpp
 )
 set(osmin_HEADERS src/converter.h src/platformextras.h
     src/locked.h
@@ -163,11 +167,15 @@ set(osmin_HEADERS src/converter.h src/platformextras.h
     src/tracker.h
     src/compass/genericcompass.h
     src/compass/plugin.h
+    src/service.h
+    src/servicemessenger.h
+    src/serviceclient.h
 )
 
 if(UNIX)
     list(APPEND osmin_SOURCES src/signalhandler.cpp)
     list(APPEND osmin_HEADERS src/signalhandler.h)
+    list(APPEND services_SOURCES src/signalhandler.cpp)
 endif()
 
 add_definitions(-DAPP_VERSION="${APP_VERSION}")
@@ -180,7 +188,10 @@ else()
     qt5_add_resources(osmin-resources gui/osmin_controls2_515.qrc)
 endif()
 
-include_directories(${LIBOSMSCOUT_INCLUDE_DIRS})
+qt5_generate_repc(osmin_SOURCES src/servicemessenger.rep SOURCE)
+qt5_generate_repc(osmin_SOURCES src/servicemessenger.rep REPLICA)
+
+include_directories(${PROJECT_BINARY_DIR} ${LIBOSMSCOUT_INCLUDE_DIRS})
 
 if(ANDROID)
     add_library(osmin SHARED ${osmin_SOURCES} ${osmin_HEADERS} ${osmin-resources})
@@ -199,10 +210,10 @@ if(BUILD_SAILFISHOS)
                           Qt5::Qml Qt5::Quick Qt5::Widgets Qt5::Gui Qt5::Xml Qt5::Svg Qt5::Network Qt5::Sensors Qt5::Multimedia Qt5::Core)
 elseif(ANDROID)
     add_definitions(-frtti) # dynamic_cast: https://github.com/android/ndk/issues/519
-    target_link_libraries(osmin Qt5::QuickControls2 Qt5::AndroidExtras android log
+    target_link_libraries(osmin Qt5::QuickControls2 Qt5::AndroidExtras android log Qt5::RemoteObjects
                           Qt5::Qml Qt5::Quick Qt5::Widgets Qt5::Gui Qt5::Xml Qt5::Svg Qt5::Network Qt5::Sensors Qt5::Multimedia Qt5::Core)
 else()
-    target_link_libraries(osmin Qt5::QuickControls2
+    target_link_libraries(osmin Qt5::QuickControls2 Qt5::RemoteObjects
                           Qt5::Qml Qt5::Quick Qt5::Widgets Qt5::Gui Qt5::Xml Qt5::Svg Qt5::Network Qt5::Sensors Qt5::Multimedia Qt5::Core)
 endif()
 

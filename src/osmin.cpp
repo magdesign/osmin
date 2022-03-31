@@ -1,4 +1,5 @@
 #include <QtGlobal>
+#include <QApplication>
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -21,6 +22,11 @@
 #include <locale>
 
 //#define Q_OS_ANDROID
+#ifdef Q_OS_ANDROID
+#include <QtAndroid>
+#include <QAndroidService>
+#include <QAndroidJniObject>
+#endif
 
 #define DIR_MAPS          "Maps"
 #define DIR_VOICES        "voices"
@@ -77,9 +83,16 @@
 #include "utils.h"
 #include "compass/plugin.h"
 
+#include "service.h"
+#include "serviceclient.h"
+
 void setupApp(QGuiApplication& app);
 void prepareTranslator(QGuiApplication& app, const QString& translationPath, const QString& translationPrefix, const QLocale& locale);
 void doExit(int code);
+
+QDir g_dataDir;
+QDir g_homeDir;
+QDir g_resDir;
 
 QFile*            g_favoritesFile         = nullptr;
 GPXListModel*     g_GPXListModel          = nullptr;
@@ -94,13 +107,68 @@ QObject* getUtils(QQmlEngine *engine, QJSEngine *scriptEngine);
 #if defined(QT_STATICPLUGIN)
 void importStaticPlugins(QQmlEngine* engine)
 {
+  (void)engine;
   //{ myPlugin e; e.initializeEngine(engine, "pluginName"); e.registerTypes("pluginName"); }
 }
 #endif
 
+#ifdef Q_OS_ANDROID
+#include <QtAndroid>
+#include <QAndroidService>
+#include <QAndroidJniObject>
+#endif
+
 int main(int argc, char *argv[])
 {
-    int ret = 0;
+  int ret = 0;
+
+  if (argc > 1 && strcmp(argv[1], "-service") == 0)
+  {
+
+    /************************************************************************/
+    /*                                                                      */
+    /*  Start background service                                            */
+    /*                                                                      */
+    /************************************************************************/
+
+    QApplication::setApplicationName(APP_NAME);
+    QApplication::setApplicationDisplayName(APP_DISPLAY_NAME);
+    QApplication::setOrganizationName(ORG_NAME);
+
+#ifdef Q_OS_ANDROID
+    QAndroidService app(argc, argv);
+    QAndroidJniObject service = QtAndroid::androidService();
+    QAndroidJniObject nullstr = QAndroidJniObject::fromString("");
+    QAndroidJniObject file = service.callObjectMethod("getExternalFilesDir", "(Ljava/lang/String;)Ljava/io/File;", nullstr.object<jstring>());
+    QAndroidJniObject path = file.callObjectMethod("getAbsolutePath", "()Ljava/lang/String;");
+    g_homeDir = QDir(path.toString());
+    if (!g_homeDir.mkpath(DIR_RES))
+      return EXIT_FAILURE;
+#else
+    QApplication app(argc, argv);
+    g_homeDir = QDir(QStandardPaths::writableLocation(QStandardPaths::HomeLocation));
+    /* ~/osmin/resources */
+    if (!g_homeDir.mkpath(QString(APP_NAME).append("/").append(DIR_RES)))
+      return EXIT_FAILURE;
+    g_homeDir.cd(APP_NAME);
+#endif
+    g_resDir = QDir(g_homeDir.absoluteFilePath(DIR_RES));
+    if (!g_homeDir.mkpath(RES_GPX_DIR))
+      return EXIT_FAILURE;
+
+    Service * ss = new Service();
+
+    ret = app.exec();
+
+  }
+  else
+  {
+
+    /************************************************************************/
+    /*                                                                      */
+    /*  Start GUI Application                                               */
+    /*                                                                      */
+    /************************************************************************/
 
     QGuiApplication::setApplicationName(APP_NAME);
     QGuiApplication::setApplicationDisplayName(APP_DISPLAY_NAME);
@@ -111,21 +179,36 @@ int main(int argc, char *argv[])
     setupApp(app);
 
     // check for the resource directory
-    QDir dataDir = QDir(PlatformExtras::getDataDir(APP_ID));
-    if (!dataDir.cd(DIR_RES))
+    g_dataDir = QDir(PlatformExtras::getDataDir(APP_ID));
+    if (!g_dataDir.cd(DIR_RES))
       return EXIT_FAILURE;
-    QDir homeDir = QDir(PlatformExtras::getHomeDir());
+    g_homeDir = QDir(PlatformExtras::getHomeDir());
 #ifdef Q_OS_ANDROID
-    if (!homeDir.mkpath(DIR_RES))
+    if (!g_homeDir.mkpath(DIR_RES))
       return EXIT_FAILURE;
 #else
     /* ~/osmin/resources */
-    if (!homeDir.mkpath(QString(APP_NAME).append("/").append(DIR_RES)))
+    if (!g_homeDir.mkpath(QString(APP_NAME).append("/").append(DIR_RES)))
       return EXIT_FAILURE;
-    homeDir.cd(APP_NAME);
+    g_homeDir.cd(APP_NAME);
 #endif
-    QDir resDir = QDir(homeDir.absoluteFilePath(DIR_RES));
-    QFile resVersion(resDir.absoluteFilePath("version"));
+    g_resDir = QDir(g_homeDir.absoluteFilePath(DIR_RES));
+    if (!g_homeDir.mkpath(RES_GPX_DIR))
+      return EXIT_FAILURE;
+
+    // fork the service process
+#if defined(Q_OS_ANDROID)
+      QAndroidJniObject::callStaticMethod<void>("io/github/janbar/osmin/QtAndroidService",
+                                                    "startQtAndroidService",
+                                                    "(Landroid/content/Context;)V",
+                                                    QtAndroid::androidActivity().object());
+#else
+#endif
+    ServiceClient * sc = new ServiceClient();
+
+
+    // check assets
+    QFile resVersion(g_resDir.absoluteFilePath("version"));
     if (resVersion.exists())
     {
       qInfo("Checking installed assets...");
@@ -151,14 +234,14 @@ int main(int argc, char *argv[])
       folders.push_back("world");
       for (QString& folder : folders)
       {
-        if (folder.length() == 0 || resDir.exists(folder) || resDir.mkpath(folder))
+        if (folder.length() == 0 || g_resDir.exists(folder) || g_resDir.mkpath(folder))
         {
-          QDir assets(dataDir.absoluteFilePath(folder));
+          QDir assets(g_dataDir.absoluteFilePath(folder));
           for (QFileInfo& asset : assets.entryInfoList())
           {
             if (asset.isFile())
             {
-              QString filename = resDir.absoluteFilePath(folder).append('/').append(asset.fileName());
+              QString filename = g_resDir.absoluteFilePath(folder).append('/').append(asset.fileName());
               if ((!QFile::exists(filename) || QFile::remove(filename)) &&
                   QFile::copy(asset.absoluteFilePath(), filename))
                 continue;
@@ -169,7 +252,7 @@ int main(int argc, char *argv[])
         }
         else
         {
-          qWarning("Failed to create path %s", resDir.absoluteFilePath(folder).toUtf8().constData());
+          qWarning("Failed to create path %s", g_resDir.absoluteFilePath(folder).toUtf8().constData());
           return EXIT_FAILURE;
         }
       }
@@ -181,19 +264,19 @@ int main(int argc, char *argv[])
       }
       resVersion.close();
     }
-    qInfo("Resource directory is %s", resDir.path().toUtf8().constData());
-    g_favoritesFile = new QFile(resDir.absoluteFilePath(RES_FAVORITES_FILE), &app);
+    qInfo("Resource directory is %s", g_resDir.path().toUtf8().constData());
+    g_favoritesFile = new QFile(g_resDir.absoluteFilePath(RES_FAVORITES_FILE), &app);
     g_hillshadeProvider = new QString("{}");
     // create the hillshade server file from sample if needed
-    //if (!resDir.exists(RES_HILLSHADE_SERVER_FILE) && resDir.exists(RES_HILLSHADE_FILE_SAMPLE))
+    //if (!g_resDir.exists(RES_HILLSHADE_SERVER_FILE) && g_resDir.exists(RES_HILLSHADE_FILE_SAMPLE))
     //{
-    //  qInfo("Create hillshade tile server file '%s' from sample", resDir.absoluteFilePath(RES_HILLSHADE_SERVER_FILE).toUtf8().constData());
-    //  QFile::copy(resDir.absoluteFilePath(RES_HILLSHADE_FILE_SAMPLE), resDir.absoluteFilePath(RES_HILLSHADE_SERVER_FILE));
+    //  qInfo("Create hillshade tile server file '%s' from sample", g_resDir.absoluteFilePath(RES_HILLSHADE_SERVER_FILE).toUtf8().constData());
+    //  QFile::copy(g_resDir.absoluteFilePath(RES_HILLSHADE_FILE_SAMPLE), g_resDir.absoluteFilePath(RES_HILLSHADE_SERVER_FILE));
     //}
     // load hillshade server file
-    if (resDir.exists(RES_HILLSHADE_SERVER_FILE))
+    if (g_resDir.exists(RES_HILLSHADE_SERVER_FILE))
     {
-      QFile file(resDir.absoluteFilePath(RES_HILLSHADE_SERVER_FILE));
+      QFile file(g_resDir.absoluteFilePath(RES_HILLSHADE_SERVER_FILE));
       if (file.open(QIODevice::ReadOnly | QIODevice::Text))
       {
         qInfo("Found hillshade tile server file '%s'", file.fileName().toUtf8().constData());
@@ -205,15 +288,13 @@ int main(int argc, char *argv[])
       }
     }
 
-    if (!homeDir.exists("GPX"))
-      homeDir.mkdir("GPX");
     g_GPXListModel = new GPXListModel(&app);
-    g_GPXListModel->init(homeDir.absoluteFilePath(RES_GPX_DIR));
+    g_GPXListModel->init(g_homeDir.absoluteFilePath(RES_GPX_DIR));
     g_Tracker = new Tracker(&app);
-    g_Tracker->init(homeDir.absoluteFilePath(RES_GPX_DIR));
+    g_Tracker->init(g_homeDir.absoluteFilePath(RES_GPX_DIR));
 
-    if (!homeDir.exists(DIR_VOICES))
-      homeDir.mkdir(DIR_VOICES);
+    if (!g_homeDir.exists(DIR_VOICES))
+      g_homeDir.mkdir(DIR_VOICES);
 
     // initialize the map directories
     QStringList mapDirs;
@@ -275,14 +356,14 @@ int main(int argc, char *argv[])
     {
       osmscout::OSMScoutQtBuilder builder = osmscout::OSMScoutQt::NewInstance()
            .WithUserAgent(OSMIN_MODULE, APP_VERSION)
-           .WithBasemapLookupDirectory(resDir.absoluteFilePath("world"))
-           .WithStyleSheetDirectory(resDir.absoluteFilePath("stylesheets"))
-           .WithIconDirectory(resDir.absoluteFilePath("icons"))
+           .WithBasemapLookupDirectory(g_resDir.absoluteFilePath("world"))
+           .WithStyleSheetDirectory(g_resDir.absoluteFilePath("stylesheets"))
+           .WithIconDirectory(g_resDir.absoluteFilePath("icons"))
            .WithMapLookupDirectories(mapDirs)
-           .WithOnlineTileProviders(resDir.absoluteFilePath("online-tile-providers.json"))
-           .WithMapProviders(resDir.absoluteFilePath("map-providers.json"))
-           .WithVoiceLookupDirectory(homeDir.absoluteFilePath(DIR_VOICES))
-           .WithVoiceProviders(resDir.absoluteFilePath("voice-providers.json"))
+           .WithOnlineTileProviders(g_resDir.absoluteFilePath("online-tile-providers.json"))
+           .WithMapProviders(g_resDir.absoluteFilePath("map-providers.json"))
+           .WithVoiceLookupDirectory(g_homeDir.absoluteFilePath(DIR_VOICES))
+           .WithVoiceProviders(g_resDir.absoluteFilePath("voice-providers.json"))
            .WithCacheLocation(QStandardPaths::writableLocation(QStandardPaths::CacheLocation).append("/tiles"))
            .WithTileCacheSizes(60, 200);
 
@@ -344,7 +425,7 @@ int main(int argc, char *argv[])
     // bind SCALE_FACTOR
     engine.rootContext()->setContextProperty("ScreenScaleFactor", QVariant(app.primaryScreen()->devicePixelRatio()));
     // bind directories
-    engine.rootContext()->setContextProperty("DataDirectory", homeDir.absolutePath());
+    engine.rootContext()->setContextProperty("DataDirectory", g_homeDir.absolutePath());
     engine.rootContext()->setContextProperty("MapsDirectories", mapDirs);
     // bind hillshade provider
     engine.rootContext()->setContextProperty("HillshadeProvider", *g_hillshadeProvider);
@@ -398,43 +479,54 @@ int main(int argc, char *argv[])
 
     ret = app.exec();
     osmscout::OSMScoutQt::FreeInstance();
-    return ret;
+
+#if defined(Q_OS_ANDROID)
+    QAndroidJniObject::callStaticMethod<void>("io/github/janbar/osmin/QtAndroidService",
+                                                  "stopQtAndroidService",
+                                                  "(Landroid/content/Context;)V",
+                                                  QtAndroid::androidActivity().object());
+#endif
+
+  }
+
+  return ret;
 }
 
-void setupApp(QGuiApplication& app) {
+void setupApp(QGuiApplication& app)
+{
 
-    SignalHandler *sh = new SignalHandler(&app);
-    sh->catchSignal(SIGHUP);
-    sh->catchSignal(SIGALRM);
+  SignalHandler *sh = new SignalHandler(&app);
+  sh->catchSignal(SIGHUP);
+  sh->catchSignal(SIGALRM);
 
-    QLocale locale = QLocale::system();
-    qInfo("User locale setting is %s", std::locale().name().c_str());
-    // set translators
-    prepareTranslator(app, QString(":/i18n"), QString(APP_TR_NAME), locale);
+  QLocale locale = QLocale::system();
+  qInfo("User locale setting is %s", std::locale().name().c_str());
+  // set translators
+  prepareTranslator(app, QString(":/i18n"), QString(APP_TR_NAME), locale);
 #ifdef Q_OS_MAC
-    QDir appDir(app.applicationDirPath());
-    if (appDir.cdUp() && appDir.cd("Resources/translations"))
-      prepareTranslator(app, appDir.absolutePath(), "qt", locale);
+  QDir appDir(app.applicationDirPath());
+  if (appDir.cdUp() && appDir.cd("Resources/translations"))
+    prepareTranslator(app, appDir.absolutePath(), "qt", locale);
 #elif defined(Q_OS_ANDROID)
-    prepareTranslator(app, "assets:/translations", "qt", locale);
+  prepareTranslator(app, "assets:/translations", "qt", locale);
 #endif
-    app.setWindowIcon(QIcon(QPixmap(":/images/osmin.png")));
+  app.setWindowIcon(QIcon(QPixmap(":/images/osmin.png")));
 }
 
 void prepareTranslator(QGuiApplication& app, const QString& translationPath, const QString& translationPrefix, const QLocale& locale)
 {
-    QString i18Path(translationPath);
-    i18Path.append("/").append(translationPrefix).append("_").append(locale.name().left(2)).append(".qm");
-    QTranslator * translator = new QTranslator();
-    if (!translator->load(locale, translationPrefix, QString("_"), translationPath))
-    {
-        qWarning("no file found for translations '%s' (using default).", i18Path.toUtf8().constData());
-    }
-    else
-    {
-        app.installTranslator(translator);
-        qInfo("using file '%s' for translations.", i18Path.toUtf8().constData());
-    }
+  QString i18Path(translationPath);
+  i18Path.append("/").append(translationPrefix).append("_").append(locale.name().left(2)).append(".qm");
+  QTranslator * translator = new QTranslator();
+  if (!translator->load(locale, translationPrefix, QString("_"), translationPath))
+  {
+      qWarning("no file found for translations '%s' (using default).", i18Path.toUtf8().constData());
+  }
+  else
+  {
+      app.installTranslator(translator);
+      qInfo("using file '%s' for translations.", i18Path.toUtf8().constData());
+  }
 }
 
 void doExit(int code)

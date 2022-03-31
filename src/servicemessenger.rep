@@ -1,0 +1,4 @@
+class ServiceMessenger {
+    SLOT(void ping(const QString &message));
+    SIGNAL(pong(const QString &message));
+}

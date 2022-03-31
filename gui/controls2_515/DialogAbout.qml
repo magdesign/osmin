@@ -35,7 +35,7 @@ DialogBase {
         Button {
             flat: true
             text: qsTr("Close")
-            onClicked: dialog.reject()
+            onClicked: Qt.quit() /*dialog.reject()*/
         }
     }
 
