@@ -1,27 +1,64 @@
 #include "service.h"
-#include <unistd.h>
+#include "compass/plugin.h"
 
-Service::Service()
+#include <QCompass>
+
+Service::Service(const QString& rootDir)
+: m_messenger()
+, m_rootDir(rootDir)
 {
-  m_t = new QThread();
-  m_t->setObjectName("service");
-  this->moveToThread(m_t);
-  connect(m_t, &QThread::started, this, &Service::process);
-  connect(m_t, &QThread::finished, m_t, &QThread::deleteLater);
-  m_t->start();
+  // register the generic compass
+  m_compass = new BuiltInCompass();
+  m_compass->setDataRate(2);
+  m_sensor = new BuiltInSensorPlugin();
+  m_sensor->registerSensors();
+  m_SB = m_sensor->createBackend(m_compass);
 }
 
 Service::~Service()
 {
-  m_t->quit();
+  if (m_node)
+  {
+    m_node->disableRemoting(&m_messenger);
+    delete m_tracker;
+    delete m_node;
+  }
+  delete m_SB;
+  delete m_sensor;
+  delete m_compass;
+  qInfo("%s", __FUNCTION__);
 }
 
-void Service::process()
+bool Service::run()
 {
+  m_tracker = new Tracker();
+  m_tracker->init(m_rootDir);
+
+  connect(m_compass, &BuiltInCompass::readingChanged, this, &Service::compassReading, Qt::QueuedConnection);
+  m_SB->start();
+
   m_node = new QRemoteObjectHost(QUrl(QStringLiteral("local:replica")));
-  m_sm = new ServiceMessenger();
-  m_node->enableRemoting(m_sm);
-  qWarning("SERVICE STARTED");
+  return m_node->enableRemoting(&m_messenger);
+}
+
+void Service::compassSetActive(bool active)
+{
+  m_compass->setActive(active);
+}
+
+void Service::compassSetDataRate(int rate)
+{
+  m_compass->setDataRate(rate);
+}
+
+void Service::compassReading()
+{
+  qDebug("new data received: %d", m_compass->reading()->valueCount());
+  for (int i = 0; i < m_compass->reading()->valueCount(); ++i)
+  {
+    m_messenger.pong(m_compass->reading()->value(i).toString());
+    qDebug() << m_compass->reading()->value(i);
+  }
 }
 
 
@@ -34,7 +71,6 @@ void Service::process()
 #include <QDir>
 #include <QProcess>
 #include <QTime>
-#include <QCompass>
 
 #include <locale>
 
@@ -58,7 +94,6 @@ void Service::process()
 #include "converter.h"
 #include "tracker.h"
 #include "utils.h"
-#include "compass/plugin.h"
 
 void setupApp(QGuiApplication& app);
 void doExit(int code);

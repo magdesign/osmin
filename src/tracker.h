@@ -42,6 +42,7 @@ class Tracker : public QObject
 public:
   Tracker(QObject* parent = nullptr);
   virtual ~Tracker();
+  Tracker(const Tracker&) = delete;
 
   bool init(const QString& root);
 

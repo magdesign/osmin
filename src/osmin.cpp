@@ -1,5 +1,5 @@
 #include <QtGlobal>
-#include <QApplication>
+#include <QCoreApplication>
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -131,9 +131,8 @@ int main(int argc, char *argv[])
     /*                                                                      */
     /************************************************************************/
 
-    QApplication::setApplicationName(APP_NAME);
-    QApplication::setApplicationDisplayName(APP_DISPLAY_NAME);
-    QApplication::setOrganizationName(ORG_NAME);
+    QCoreApplication::setApplicationName(APP_NAME);
+    QCoreApplication::setOrganizationName(ORG_NAME);
 
 #ifdef Q_OS_ANDROID
     QAndroidService app(argc, argv);
@@ -145,7 +144,7 @@ int main(int argc, char *argv[])
     if (!g_homeDir.mkpath(DIR_RES))
       return EXIT_FAILURE;
 #else
-    QApplication app(argc, argv);
+    QCoreApplication app(argc, argv);
     g_homeDir = QDir(QStandardPaths::writableLocation(QStandardPaths::HomeLocation));
     /* ~/osmin/resources */
     if (!g_homeDir.mkpath(QString(APP_NAME).append("/").append(DIR_RES)))
@@ -156,9 +155,11 @@ int main(int argc, char *argv[])
     if (!g_homeDir.mkpath(RES_GPX_DIR))
       return EXIT_FAILURE;
 
-    Service * ss = new Service();
-
+    Service * svc = new Service(g_homeDir.absoluteFilePath(RES_GPX_DIR));
+    QTimer::singleShot(0, svc, &Service::run);
     ret = app.exec();
+
+    delete svc;
 
   }
   else
