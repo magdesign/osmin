@@ -62,6 +62,7 @@
 #define RES_FAVORITES_FILE        "favorites.csv"
 #define RES_HILLSHADE_SERVER_FILE "hillshade-tile-server.json"
 #define RES_HILLSHADE_FILE_SAMPLE "hillshade-tile-server.json.sample"
+#define SERVICE_ARGS              "-service"
 
 #include <osmscoutclientqt/OSMScoutQt.h>
 // Custom QML objects
@@ -84,11 +85,12 @@
 #include "compass/plugin.h"
 
 #include "service.h"
-#include "serviceclient.h"
+#include "serviceremote.h"
 
 void setupApp(QGuiApplication& app);
 void prepareTranslator(QGuiApplication& app, const QString& translationPath, const QString& translationPrefix, const QLocale& locale);
 void doExit(int code);
+void signalCatched(int signal);
 
 QDir g_dataDir;
 QDir g_homeDir;
@@ -199,13 +201,16 @@ int main(int argc, char *argv[])
 
     // fork the service process
 #if defined(Q_OS_ANDROID)
-      QAndroidJniObject::callStaticMethod<void>("io/github/janbar/osmin/QtAndroidService",
-                                                    "startQtAndroidService",
-                                                    "(Landroid/content/Context;)V",
-                                                    QtAndroid::androidActivity().object());
+    QAndroidJniObject::callStaticMethod<void>("io/github/janbar/osmin/QtAndroidService",
+                                                  "startQtAndroidService",
+                                                  "(Landroid/content/Context;)V",
+                                                  QtAndroid::androidActivity().object());
 #else
+    QScopedPointer<QProcess> psvc(new QProcess());
+    psvc->start(argv[0], QString(SERVICE_ARGS).split(' '));
 #endif
-    ServiceClient * sc = new ServiceClient();
+
+    QScopedPointer<ServiceRemote> sc(new ServiceRemote());
 
 
     // check assets
@@ -481,11 +486,14 @@ int main(int argc, char *argv[])
     ret = app.exec();
     osmscout::OSMScoutQt::FreeInstance();
 
+    sc.reset();
 #if defined(Q_OS_ANDROID)
     QAndroidJniObject::callStaticMethod<void>("io/github/janbar/osmin/QtAndroidService",
                                                   "stopQtAndroidService",
                                                   "(Landroid/content/Context;)V",
                                                   QtAndroid::androidActivity().object());
+#else
+    psvc->terminate();
 #endif
 
   }
@@ -499,6 +507,9 @@ void setupApp(QGuiApplication& app)
   SignalHandler *sh = new SignalHandler(&app);
   sh->catchSignal(SIGHUP);
   sh->catchSignal(SIGALRM);
+  sh->catchSignal(SIGQUIT);
+  sh->catchSignal(SIGTERM);
+  QObject::connect(sh, &SignalHandler::catched, &signalCatched);
 
   QLocale locale = QLocale::system();
   qInfo("User locale setting is %s", std::locale().name().c_str());
@@ -527,6 +538,18 @@ void prepareTranslator(QGuiApplication& app, const QString& translationPath, con
   {
       app.installTranslator(translator);
       qInfo("using file '%s' for translations.", i18Path.toUtf8().constData());
+  }
+}
+
+void signalCatched(int signal)
+{
+  switch(signal)
+  {
+  case SIGQUIT:
+  case SIGTERM:
+    doExit(0);
+  default:
+    qDebug("Received signal %d", signal);
   }
 }
 
