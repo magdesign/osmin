@@ -1,4 +1,55 @@
 class ServiceMessenger {
-    SLOT(void ping(const QString &message));
-    SIGNAL(pong(const QString &message));
+  SLOT(void ping(const QString &message));
+  SIGNAL(pong(const QString &message));
+
+  // Compass sensor
+  SLOT(void compass_setActive(bool active));
+  SLOT(void compass_setDataRate(int dataRate));
+  SIGNAL(compass_readingChanged(
+            float azimuth,
+            float calibrationLevel
+  ));
+  SIGNAL(compass_activeChanged(bool active));
+  SIGNAL(compass_dataRateChanged(int dataRate));
+
+  // Geo position
+  SLOT(void position_setUpdateInterval(int interval));
+  SLOT(void position_setPreferredPositioningMethods(int methods));
+  SLOT(void position_StartUpdates());
+  SLOT(void position_StopUpdates());
+  SIGNAL(position_positionUpdated(
+            bool positionValid,
+            double latitude,
+            double longitude,
+            bool horizontalAccuracyValid,
+            float horizontalAccuracy,
+            double altitude
+  ));
+  SIGNAL(position_activeChanged(bool active));
+  SIGNAL(position_updateIntervalChanged(int interval));
+  SIGNAL(position_preferredPositioningMethodsChanged(int method));
+
+  // Tracker
+  SLOT(void tracker_SetRecording(const QString& filename));
+  SLOT(void tracker_StartRecording());
+  SLOT(void tracker_ResumeRecording(const QString& filename));
+  SLOT(void tracker_StopRecording());
+  SLOT(void tracker_PinPosition());
+  SLOT(void tracker_MarkPosition(const QString& symbol, const QString& name, const QString& description));
+  SLOT(void tracker_ResetData());
+  SIGNAL(tracker_IsRecordingChanged(bool recording));
+  SIGNAL(tracker_RecordingChanged(const QString& filename));
+  SIGNAL(tracker_ProcessingChanged(bool processing));
+  SIGNAL(tracker_PositionRecorded(double lat, double lon));
+  SIGNAL(tracker_PositionMarked(double lat, double lon, const QString& symbol, const QString& name));
+  SIGNAL(tracker_RecordingFailed());
+  SIGNAL(tracker_DataChanged(
+            double elevation,
+            double currentSpeed,
+            double distance,
+            double duration,
+            double ascent,
+            double descent,
+            double maxSpeed
+  ));
 }

@@ -136,6 +136,10 @@ int main(int argc, char *argv[])
     QCoreApplication::setApplicationName(APP_NAME);
     QCoreApplication::setOrganizationName(ORG_NAME);
 
+    qRegisterMetaType<osmscout::PositionAgent::PositionState>("osmscout::PositionAgent::PositionState");
+    qRegisterMetaType<std::optional<osmscout::Bearing>>("std::optional<osmscout::Bearing>");
+    qRegisterMetaType<osmscout::GeoCoord>("osmscout::GeoCoord");
+
 #ifdef Q_OS_ANDROID
     QAndroidService app(argc, argv);
     QAndroidJniObject service = QtAndroid::androidService();

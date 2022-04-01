@@ -134,6 +134,7 @@ find_package(Qt5Network REQUIRED)
 find_package(Qt5Sensors REQUIRED)
 find_package(Qt5Multimedia REQUIRED)
 find_package(Qt5RemoteObjects REQUIRED)
+find_package(Qt5Positioning REQUIRED)
 
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_STANDARD 17)
@@ -151,7 +152,6 @@ set(osmin_SOURCES src/osmin.cpp src/converter.cpp src/platformextras.cpp
     src/compass/genericcompass.cpp
     src/compass/plugin.cpp
     src/service.cpp
-    src/servicemessenger.cpp
     src/serviceremote.cpp
 )
 set(osmin_HEADERS src/converter.h src/platformextras.h
@@ -168,7 +168,6 @@ set(osmin_HEADERS src/converter.h src/platformextras.h
     src/compass/genericcompass.h
     src/compass/plugin.h
     src/service.h
-    src/servicemessenger.h
     src/serviceremote.h
 )
 
@@ -210,10 +209,10 @@ if(BUILD_SAILFISHOS)
                           Qt5::Qml Qt5::Quick Qt5::Widgets Qt5::Gui Qt5::Xml Qt5::Svg Qt5::Network Qt5::Sensors Qt5::Multimedia Qt5::Core)
 elseif(ANDROID)
     add_definitions(-frtti) # dynamic_cast: https://github.com/android/ndk/issues/519
-    target_link_libraries(osmin Qt5::QuickControls2 Qt5::AndroidExtras android log Qt5::RemoteObjects
+    target_link_libraries(osmin Qt5::QuickControls2 Qt5::AndroidExtras android log Qt5::RemoteObjects Qt5::Positioning
                           Qt5::Qml Qt5::Quick Qt5::Widgets Qt5::Gui Qt5::Xml Qt5::Svg Qt5::Network Qt5::Sensors Qt5::Multimedia Qt5::Core)
 else()
-    target_link_libraries(osmin Qt5::QuickControls2 Qt5::RemoteObjects
+    target_link_libraries(osmin Qt5::QuickControls2 Qt5::RemoteObjects Qt5::Positioning
                           Qt5::Qml Qt5::Quick Qt5::Widgets Qt5::Gui Qt5::Xml Qt5::Svg Qt5::Network Qt5::Sensors Qt5::Multimedia Qt5::Core)
 endif()
 

@@ -41,10 +41,45 @@ void ServiceRemote::run()
   // setup watch dog
   connect(m_messenger.data(), &ServiceMessengerReplica::stateChanged, this, &ServiceRemote::onStateChanged);
 
-  connect(m_messenger.data(), &ServiceMessengerReplica::pong, [](const QString &message){
-      qWarning() << "Service sent: " << message;
+  connect(m_messenger.data(), &ServiceMessengerReplica::compass_readingChanged, [](float a, float c){
+      qWarning() << "COMPASS: " << a << c;
   });
+  connect(m_messenger.data(), &ServiceMessengerReplica::pong, [](const QString& name){
+      qWarning() << "Service sent: " << name;
+  });
+  connect(m_messenger.data(), &ServiceMessengerReplica::tracker_DataChanged, [](double elevation,
+          double currentSpeed,
+          double distance,
+          double duration,
+          double ascent,
+          double descent,
+          double maxSpeed){
+      qWarning() << "DATA: " << elevation << currentSpeed << distance << duration << ascent << descent << maxSpeed;
+  });
+  connect(m_messenger.data(), &ServiceMessengerReplica::tracker_PositionRecorded, [](double lat, double lon){
+      qWarning() << "RECORDED: " << lat << lon;
+  });
+  connect(m_messenger.data(), &ServiceMessengerReplica::tracker_PositionMarked, [](double lat, double lon, const QString& symbol, const QString& name){
+      qWarning() << "MARKED: " << lat << lon << symbol << name;
+  });
+  connect(m_messenger.data(), &ServiceMessengerReplica::tracker_RecordingChanged, [](const QString& filename){
+      qWarning() << "RECORDING: " << filename;
+  });
+  connect(m_messenger.data(), &ServiceMessengerReplica::tracker_IsRecordingChanged, [](bool recording){
+      qWarning() << "IS RECORDING: " << recording;
+  });
+  connect(m_messenger.data(), &ServiceMessengerReplica::position_positionUpdated, [](
+          bool positionValid,
+          double latitude,
+          double longitude,
+          bool horizontalAccuracyValid,
+          float horizontalAccuracy,
+          double altitude){
+      qWarning() << "POSITION: " << positionValid << latitude << longitude << altitude;
+  });
+
   m_messenger->ping("Hello...");
+  m_messenger->tracker_StartRecording();
 }
 
 void ServiceRemote::onStateChanged(QRemoteObjectReplica::State state, QRemoteObjectReplica::State oldState)
