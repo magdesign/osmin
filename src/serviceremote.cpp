@@ -39,7 +39,7 @@ void ServiceRemote::run()
   }
   qDebug("Connect to service succeeded");
   // setup watch dog
-  connect(m_messenger.data(), &ServiceMessengerReplica::stateChanged, this, &ServiceRemote::onStateChanged);
+  connect(m_messenger.data(), &ServiceMessengerReplica::stateChanged, this, &ServiceRemote::onStateChanged, Qt::QueuedConnection);
 
   connect(m_messenger.data(), &ServiceMessengerReplica::compass_readingChanged, [](float a, float c){
       qWarning() << "COMPASS: " << a << c;
@@ -79,7 +79,7 @@ void ServiceRemote::run()
   });
 
   m_messenger->ping("Hello...");
-  m_messenger->tracker_StartRecording();
+  //m_messenger->tracker_StartRecording();
 }
 
 void ServiceRemote::onStateChanged(QRemoteObjectReplica::State state, QRemoteObjectReplica::State oldState)

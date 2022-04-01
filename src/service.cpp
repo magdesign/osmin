@@ -9,7 +9,6 @@ Service::Service(const QString& rootDir)
 {
   // register the generic compass
   m_compass = new BuiltInCompass();
-  m_compass->setDataRate(2);
   m_sensor = new BuiltInSensorPlugin();
   m_sensor->registerSensors();
   m_SB = m_sensor->createBackend(m_compass);
@@ -33,7 +32,7 @@ Service::~Service()
   qInfo("%s", __FUNCTION__);
 }
 
-bool Service::run()
+void Service::run()
 {
   m_tracker = new Tracker();
   m_tracker->init(m_rootDir);
@@ -44,8 +43,12 @@ bool Service::run()
   connect(m_tracker, &Tracker::trackerPositionMarked, this, &Service::onTrackerPositionMarked);
   connect(m_tracker, &Tracker::recordingFailed, this, &Service::onTrackerRecordingFailed);
 
+  m_node = new QRemoteObjectHost(QUrl(QStringLiteral("local:replica")));
+  m_node->enableRemoting(this);
+
   connect(m_compass, &BuiltInCompass::readingChanged, this, &Service::onCompassReadingChanged, Qt::QueuedConnection);
   connect(this, &Service::compass_azimuthChanged, m_tracker, &Tracker::azimuthChanged);
+  m_compass->setDataRate(COMPASS_DATARATE);
   m_SB->start();
 
   if (m_position)
@@ -56,12 +59,20 @@ bool Service::run()
     QGeoPositionInfoSource::PositioningMethods m;
     m.setFlag(QGeoPositionInfoSource::SatellitePositioningMethods);
     m_position->setPreferredPositioningMethods(m);
-    m_position->setUpdateInterval(1000);
+    m_position->setUpdateInterval(POSITION_UPDATE_INTERVAL);
+    m_positionActive = true;
+    emit position_activeChanged(m_positionActive);
     m_position->startUpdates();
   }
 
-  m_node = new QRemoteObjectHost(QUrl(QStringLiteral("local:replica")));
-  return m_node->enableRemoting(this);
+  // resume current recording
+  QVariant rec = m_settings.value("trackerRecording");
+  if (!rec.isNull() && rec.toString().length() > 0)
+  {
+    qDebug("Resume recording '%s'", rec.toString().toUtf8().constData());
+    emit tracker_ResumeRecording();
+    m_tracker->resumeRecording(rec.toString());
+  }
 }
 
 void Service::ping(const QString &message)
@@ -69,6 +80,11 @@ void Service::ping(const QString &message)
   onTrackerRecordingChanged();
   onTrackerProcessingChanged();
   onTrackerDataChanged();
+  onPositionUpdateIntervalChanged();
+  onPositionSupportedPositioningMethodsChanged();
+  onCompassActiveChanged();
+  onCompassDataRateChanged();
+  emit position_activeChanged(m_positionActive);
   emit pong(message);
 }
 
@@ -111,6 +127,26 @@ void Service::position_setPreferredPositioningMethods(int methods)
   m_position->setPreferredPositioningMethods(m);
 }
 
+void Service::position_startUpdates()
+{
+  if (m_position != nullptr)
+  {
+    m_position->startUpdates();
+    m_positionActive = true;
+    emit position_activeChanged(m_positionActive);
+  }
+}
+
+void Service::position_stopUpdates()
+{
+  if (m_position != nullptr)
+  {
+    m_position->stopUpdates();
+    m_positionActive = false;
+    emit position_activeChanged(m_positionActive);
+  }
+}
+
 void Service::tracker_SetRecording(const QString &filename)
 {
   m_tracker->setRecording(filename);
@@ -119,11 +155,6 @@ void Service::tracker_SetRecording(const QString &filename)
 void Service::tracker_StartRecording()
 {
   m_tracker->startRecording();
-}
-
-void Service::tracker_ResumeRecording(const QString &filename)
-{
-  m_tracker->resumeRecording(filename);
 }
 
 void Service::tracker_StopRecording()
@@ -159,12 +190,12 @@ void Service::onCompassReadingChanged()
   }
 }
 
-void Service::onCompassactiveChanged()
+void Service::onCompassActiveChanged()
 {
   emit compass_activeChanged(m_compass->isActive());
 }
 
-void Service::onCompassdataRateChanged()
+void Service::onCompassDataRateChanged()
 {
   emit compass_dataRateChanged(m_compass->dataRate());
 }

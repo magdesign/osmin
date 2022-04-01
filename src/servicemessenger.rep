@@ -15,8 +15,8 @@ class ServiceMessenger {
   // Geo position
   SLOT(void position_setUpdateInterval(int interval));
   SLOT(void position_setPreferredPositioningMethods(int methods));
-  SLOT(void position_StartUpdates());
-  SLOT(void position_StopUpdates());
+  SLOT(void position_startUpdates());
+  SLOT(void position_stopUpdates());
   SIGNAL(position_positionUpdated(
             bool positionValid,
             double latitude,
@@ -27,16 +27,16 @@ class ServiceMessenger {
   ));
   SIGNAL(position_activeChanged(bool active));
   SIGNAL(position_updateIntervalChanged(int interval));
-  SIGNAL(position_preferredPositioningMethodsChanged(int method));
+  SIGNAL(position_preferredPositioningMethodsChanged(int methods));
 
   // Tracker
   SLOT(void tracker_SetRecording(const QString& filename));
   SLOT(void tracker_StartRecording());
-  SLOT(void tracker_ResumeRecording(const QString& filename));
   SLOT(void tracker_StopRecording());
   SLOT(void tracker_PinPosition());
   SLOT(void tracker_MarkPosition(const QString& symbol, const QString& name, const QString& description));
   SLOT(void tracker_ResetData());
+  SIGNAL(tracker_ResumeRecording());
   SIGNAL(tracker_IsRecordingChanged(bool recording));
   SIGNAL(tracker_RecordingChanged(const QString& filename));
   SIGNAL(tracker_ProcessingChanged(bool processing));
