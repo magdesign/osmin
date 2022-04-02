@@ -41,6 +41,7 @@ cmake .. -B $BUILD_DIR -DCMAKE_SYSTEM_NAME=Android \
 -DQt5Positioning_DIR=$QT_DIR/lib/cmake/Qt5Positioning \
 -DQt5Multimedia_DIR=$QT_DIR/lib/cmake/Qt5Multimedia \
 -DQt5AndroidExtras_DIR=$QT_DIR/lib/cmake/Qt5AndroidExtras \
+-DQt5RemoteObjects_DIR=$QT_DIR/lib/cmake/Qt5RemoteObjects \
 $@
 
 [ $? -eq 0 ] && cmake --build $BUILD_DIR --parallel 4

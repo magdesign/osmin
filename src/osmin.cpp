@@ -63,6 +63,7 @@
 #define RES_HILLSHADE_SERVER_FILE "hillshade-tile-server.json"
 #define RES_HILLSHADE_FILE_SAMPLE "hillshade-tile-server.json.sample"
 #define SERVICE_ARGS              "-service"
+#define SERVICE_URL               "local:osmin"
 
 #include <osmscoutclientqt/OSMScoutQt.h>
 // Custom QML objects
@@ -79,13 +80,15 @@
 #include "favoritesmodel.h"
 #include "gpxlistmodel.h"
 #include "gpxfilemodel.h"
-#include "tracker.h"
 #include "qmlsortfiltermodel.h"
 #include "utils.h"
 #include "compass/plugin.h"
 
 #include "service.h"
 #include "serviceremote.h"
+#include "servicecompass.h"
+#include "servicepositionsource.h"
+#include "servicetracker.h"
 
 void setupApp(QGuiApplication& app);
 void prepareTranslator(QGuiApplication& app, const QString& translationPath, const QString& translationPrefix, const QLocale& locale);
@@ -98,12 +101,14 @@ QDir g_resDir;
 
 QFile*            g_favoritesFile         = nullptr;
 GPXListModel*     g_GPXListModel          = nullptr;
-Tracker*          g_Tracker               = nullptr;
+ServiceRemote*    g_ServiceRemote         = nullptr;
+ServiceTracker*   g_ServiceTracker        = nullptr;
 QString*          g_hillshadeProvider     = nullptr;
 
 QObject* getFavoritesModel(QQmlEngine *engine, QJSEngine *scriptEngine);
 QObject* getGPXListModel(QQmlEngine *engine, QJSEngine *scriptEngine);
-QObject* getTracker(QQmlEngine *engine, QJSEngine *scriptEngine);
+QObject* getServiceTracker(QQmlEngine *engine, QJSEngine *scriptEngine);
+QObject* getServiceRemote(QQmlEngine *engine, QJSEngine *scriptEngine);
 QObject* getUtils(QQmlEngine *engine, QJSEngine *scriptEngine);
 
 #if defined(QT_STATICPLUGIN)
@@ -161,7 +166,7 @@ int main(int argc, char *argv[])
     if (!g_homeDir.mkpath(RES_GPX_DIR))
       return EXIT_FAILURE;
 
-    Service * svc = new Service(g_homeDir.absoluteFilePath(RES_GPX_DIR));
+    Service * svc = new Service(SERVICE_URL, g_homeDir.absoluteFilePath(RES_GPX_DIR));
     QTimer::singleShot(0, svc, &Service::run);
     ret = app.exec();
 
@@ -214,8 +219,9 @@ int main(int argc, char *argv[])
     psvc->start(argv[0], QString(SERVICE_ARGS).split(' '));
 #endif
 
-    QScopedPointer<ServiceRemote> sc(new ServiceRemote());
-
+    g_ServiceRemote = new ServiceRemote(SERVICE_URL);
+    g_ServiceTracker = new ServiceTracker();
+    g_ServiceTracker->connectToService(g_ServiceRemote);
 
     // check assets
     QFile resVersion(g_resDir.absoluteFilePath("version"));
@@ -300,8 +306,6 @@ int main(int argc, char *argv[])
 
     g_GPXListModel = new GPXListModel(&app);
     g_GPXListModel->init(g_homeDir.absoluteFilePath(RES_GPX_DIR));
-    g_Tracker = new Tracker(&app);
-    g_Tracker->init(g_homeDir.absoluteFilePath(RES_GPX_DIR));
 
     if (!g_homeDir.exists(DIR_VOICES))
       g_homeDir.mkdir(DIR_VOICES);
@@ -401,7 +405,12 @@ int main(int argc, char *argv[])
     qmlRegisterType<GPXFileModel>(OSMIN_MODULE, 1, 0, "GPXFileModel");
     qRegisterMetaType<GPXFileModel::GPXObjectRoles>("GPXFileModel::Roles");
     qRegisterMetaType<QList<osmscout::OverlayObject*> >("QList<osmscout::OverlayObject*>");
-    qmlRegisterSingletonType<Tracker>(OSMIN_MODULE, 1, 0, "Tracker", getTracker);
+    qmlRegisterSingletonType<ServiceTracker>(OSMIN_MODULE, 1, 0, "Tracker", getServiceTracker);
+    qmlRegisterSingletonType<ServiceRemote>(OSMIN_MODULE, 1, 0, "Service", getServiceRemote);
+    qmlRegisterType<ServiceCompass>(OSMIN_MODULE, 1, 0, "ServiceCompass");
+    qmlRegisterType<ServicePositionSource>(OSMIN_MODULE, 1, 0, "ServicePositionSource");
+
+    qRegisterMetaType<QAbstractSocket::SocketState>("QAbstractSocket::SocketState");
 
     // register the generic compass
     qmlRegisterType<BuiltInCompass>(OSMIN_MODULE, 1, 0, "Compass");
@@ -489,8 +498,8 @@ int main(int argc, char *argv[])
 
     ret = app.exec();
     osmscout::OSMScoutQt::FreeInstance();
+    g_ServiceRemote->terminate();
 
-    sc.reset();
 #if defined(Q_OS_ANDROID)
     QAndroidJniObject::callStaticMethod<void>("io/github/janbar/osmin/QtAndroidService",
                                                   "stopQtAndroidService",
@@ -498,6 +507,8 @@ int main(int argc, char *argv[])
                                                   QtAndroid::androidActivity().object());
 #else
     psvc->terminate();
+    if (!psvc->waitForFinished())
+      psvc->kill();
 #endif
 
   }
@@ -600,11 +611,18 @@ QObject* getGPXListModel(QQmlEngine *engine, QJSEngine *scriptEngine)
   return g_GPXListModel;
 }
 
-QObject* getTracker(QQmlEngine *engine, QJSEngine *scriptEngine)
+QObject* getServiceTracker(QQmlEngine *engine, QJSEngine *scriptEngine)
 {
   Q_UNUSED(engine)
   Q_UNUSED(scriptEngine)
-  return g_Tracker;
+  return g_ServiceTracker;
+}
+
+QObject* getServiceRemote(QQmlEngine *engine, QJSEngine *scriptEngine)
+{
+  Q_UNUSED(engine)
+  Q_UNUSED(scriptEngine)
+  return g_ServiceRemote;
 }
 
 QObject* getUtils(QQmlEngine *engine, QJSEngine *scriptEngine)

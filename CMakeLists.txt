@@ -153,6 +153,9 @@ set(osmin_SOURCES src/osmin.cpp src/converter.cpp src/platformextras.cpp
     src/compass/plugin.cpp
     src/service.cpp
     src/serviceremote.cpp
+    src/servicecompass.cpp
+    src/servicepositionsource.cpp
+    src/servicetracker.cpp
 )
 set(osmin_HEADERS src/converter.h src/platformextras.h
     src/locked.h
@@ -169,6 +172,9 @@ set(osmin_HEADERS src/converter.h src/platformextras.h
     src/compass/plugin.h
     src/service.h
     src/serviceremote.h
+    src/servicecompass.h
+    src/servicepositionsource.h
+    src/servicetracker.h
 )
 
 if(UNIX)

@@ -9,7 +9,8 @@
 #include "rep_servicemessenger_source.h"
 #include "tracker.h"
 
-#define COMPASS_DATARATE          2     // 2 hertz
+#define COMPASS_DATARATE          2     // default
+#define COMPASS_MIN_INTERVAL      250   // 250 ms
 #define POSITION_UPDATE_INTERVAL  1000  // 1 sec
 
 class BuiltInCompass;
@@ -20,7 +21,7 @@ class Service : public ServiceMessengerSource
 {
   Q_OBJECT
 public:
-  Service(const QString& rootDir);
+  Service(const QString& url, const QString& rootDir);
   virtual ~Service();
 
 signals:
@@ -39,12 +40,12 @@ public slots:
   void position_startUpdates() override;
   void position_stopUpdates() override;
 
-  void tracker_SetRecording(const QString& filename) override;
-  void tracker_StartRecording() override;
-  void tracker_StopRecording() override;
-  void tracker_PinPosition() override;
-  void tracker_MarkPosition(const QString& symbol, const QString& name, const QString& description) override;
-  void tracker_ResetData() override;
+  void tracker_setRecording(const QString& filename) override;
+  void tracker_startRecording() override;
+  void tracker_stopRecording() override;
+  void tracker_pinPosition() override;
+  void tracker_markPosition(const QString& symbol, const QString& name, const QString& description) override;
+  void tracker_resetData() override;
 
 private slots:
   void onCompassReadingChanged();
@@ -59,10 +60,12 @@ private slots:
   void onTrackerProcessingChanged();
   void onTrackerPositionRecorded(double lat, double lon);
   void onTrackerPositionMarked(double lat, double lon, const QString& symbol, const QString& name);
+  void onTrackerPositionChanged();
   void onTrackerRecordingFailed();
   void onTrackerDataChanged();
 
 private:
+  QString m_url;
   QString m_rootDir;
   QSettings m_settings;
   BuiltInCompass * m_compass;
@@ -74,6 +77,8 @@ private:
 
   QRemoteObjectHost * m_node = nullptr;
   Tracker * m_tracker = nullptr;
+
+  QElapsedTimer m_pollTimeout;
 };
 
 #endif // SERVICE_H
