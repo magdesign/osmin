@@ -409,8 +409,7 @@ int main(int argc, char *argv[])
     qmlRegisterSingletonType<ServiceRemote>(OSMIN_MODULE, 1, 0, "Service", getServiceRemote);
     qmlRegisterType<ServiceCompass>(OSMIN_MODULE, 1, 0, "ServiceCompass");
     qmlRegisterType<ServicePositionSource>(OSMIN_MODULE, 1, 0, "ServicePositionSource");
-
-    qRegisterMetaType<QAbstractSocket::SocketState>("QAbstractSocket::SocketState");
+    qmlRegisterType<ServicePosition>(OSMIN_MODULE, 1, 0, "ServicePosition");
 
     // register the generic compass
     qmlRegisterType<BuiltInCompass>(OSMIN_MODULE, 1, 0, "Compass");
