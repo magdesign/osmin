@@ -321,9 +321,9 @@ ApplicationWindow {
         Osmin.Converter.southeast = qsTr("southeast");
         Osmin.Converter.system = settings.systemOfUnits;
         positionSource.active = true;
+        // ping service backend
+        Osmin.Service.ping("Hello");
         launcher.start();
-        // Connect the tracker to the sensor
-        positionSource.dataUpdated.connect(Osmin.Tracker.locationChanged);
     }
 
     // The initial stacked page (banner) will set the startup mode.

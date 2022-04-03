@@ -61,7 +61,6 @@ MapPage {
     }
 
     Component.onCompleted: {
-        positionSource.update();
         if (positionSource._posValid) {
             map.showCoordinates(positionSource._lat, positionSource._lon);
         }
@@ -77,11 +76,6 @@ MapPage {
         }
         // on azimuth changed
         compass.polled.connect(function(azimuth, rotation){ mapView.azimuth = azimuth; });
-        // resume current recording
-        if (settings.trackerRecording !== "") {
-            console.log("Resuming recording " + settings.trackerRecording);
-            Tracker.resumeRecording(settings.trackerRecording);
-        }
     }
 
     property QtObject mark: QtObject {
@@ -231,21 +225,14 @@ MapPage {
             // unlock rotation and disable rotate
             lockRotation = false;
             rotateEnabled = false;
-            // connect the Tracker to azimuth
+            // activate azimuth
             compass.active = !applicationSuspended;
-            compass.polled.connect(Tracker.azimuthChanged);
             // show vehicle icon
             map.setVehicleScaleFactor(1.0);
-            // log this position
-            Tracker.locationChanged(positionSource._posValid,
-                                    positionSource._lat, positionSource._lon,
-                                    positionSource._accValid, positionSource._acc,
-                                    positionSource._alt);
         } else {
             // hide vehicle icon
             map.setVehicleScaleFactor(0.0);
-            // disconnect the Tracker from azimuth
-            compass.polled.disconnect(Tracker.azimuthChanged);
+            // deactivate azimuth
             compass.active = false;
             // lock rotation
             mapView.rotation = 0.0;

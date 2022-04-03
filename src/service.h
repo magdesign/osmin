@@ -5,6 +5,7 @@
 #include <QThread>
 #include <QSettings>
 #include <QGeoPositionInfoSource>
+#include <QElapsedTimer>
 
 #include "rep_servicemessenger_source.h"
 #include "tracker.h"

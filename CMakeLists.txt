@@ -180,7 +180,6 @@ set(osmin_HEADERS src/converter.h src/platformextras.h
 if(UNIX)
     list(APPEND osmin_SOURCES src/signalhandler.cpp)
     list(APPEND osmin_HEADERS src/signalhandler.h)
-    list(APPEND services_SOURCES src/signalhandler.cpp)
 endif()
 
 add_definitions(-DAPP_VERSION="${APP_VERSION}")
