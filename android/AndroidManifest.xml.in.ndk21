@@ -4,7 +4,7 @@
   android:versionCode="@APP_VERSION_CODE@"
   package="@APP_ID@"
   android:installLocation="auto">
-    <application android:label="@APP_NAME@" android:name="org.qtproject.qt5.android.bindings.QtApplication" android:icon="@mipmap/ic_launcher">
+  <application android:label="@APP_NAME@" android:name="org.qtproject.qt5.android.bindings.QtApplication" android:icon="@mipmap/ic_launcher">
     <activity android:label="@APP_NAME@" android:name="org.qtproject.qt5.android.bindings.QtActivity" android:screenOrientation="unspecified" android:configChanges="orientation|uiMode|screenLayout|screenSize|smallestScreenSize|locale|fontScale|keyboard|keyboardHidden|navigation">
       <intent-filter>
         <action android:name="android.intent.action.MAIN"/>
@@ -30,14 +30,14 @@
       <!--meta-data android:name="android.app.background_running" android:value="true"/-->
       <!-- extract android style -->
       <!-- available android:values :
-       * default - In most cases this will be the same as "full", but it can also be something else if needed.
+      * default - In most cases this will be the same as "full", but it can also be something else if needed.
       * full - useful QWidget & Quick Controls 1 apps
       * minimal - useful for Quick Controls 2 apps, it is much faster than "full"
       * none - useful for apps that don't use any of the above Qt modules-->
       <meta-data android:name="android.app.extract_android_style" android:value="default"/>
       <!-- extract android style -->
     </activity>
-    <service android:process=":qt_service" android:name=".QtAndroidService">
+    <service android:process=":qt_service" android:name=".QtAndroidService" android:foregroundServiceType="location">
       <meta-data android:name="android.app.lib_name" android:value="-- %%INSERT_APP_LIB_NAME%% --"/>
       <meta-data android:name="android.app.arguments" android:value="-service"/>
       <meta-data android:name="android.app.qt_sources_resource_id" android:resource="@array/qt_sources"/>
@@ -63,4 +63,6 @@
   <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
   <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
   <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+  <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION"/>
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
 </manifest>
