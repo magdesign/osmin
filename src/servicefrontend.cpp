@@ -2,7 +2,8 @@
 #include "rep_servicemessenger_replica.h"
 
 #include <QTimer>
-#include <unistd.h>
+#include <QElapsedTimer>
+
 ServiceFrontend::ServiceFrontend(const QString& url)
 : m_url(url)
 , m_t(new QThread())
@@ -101,11 +102,18 @@ void ServiceFrontend::run()
   m_messenger.reset(m_node->acquire<ServiceMessengerReplica>());
   bool res = false;
   qDebug("Trying to connect to service ...");
+  QElapsedTimer tm;
   while (!res)
   {
-    res = m_messenger->waitForSource();
+    tm.restart();
+    res = m_messenger->waitForSource(30000);
     if (!res)
+    {
+      // interrupted ?
+      if (tm.elapsed() < 5000)
+        return;
       qDebug("Connect to service source failed after timeout");
+    }
   }
   qDebug("Connect to service succeeded");
   // setup watch dog

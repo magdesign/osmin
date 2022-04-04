@@ -1028,6 +1028,7 @@ MapPage {
     }
 
     property var overlayRecording: map.createOverlayWay("_track");
+    property bool isRecording: false
 
     Connections {
         target: Tracker
@@ -1038,11 +1039,13 @@ MapPage {
             popInfo.open(qsTr("Track recording failed"));
         }
         function onIsRecordingChanged() {
-            if (!Tracker.isRecording) {
-                //overlayManager.removeRecording();
-                //overlayManager.removeMark(1);
+            // clear previous recording
+            if (Tracker.isRecording && !mapView.isRecording) {
+                overlayManager.removeRecording();
+                overlayManager.removeMark(1);
                 overlayRecording.clear();
             }
+            mapView.isRecording = Tracker.isRecording;
         }
         function onTrackerPositionRecorded(lat, lon) {
             overlayRecording.addPoint(lat, lon);
