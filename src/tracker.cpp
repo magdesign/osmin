@@ -601,44 +601,47 @@ void TrackerModule::onFlushRecording()
 void TrackerModule::onDumpRecording()
 {
   qDebug("%s", __FUNCTION__);
+  QSharedPointer<QFile> file = m_file;
+  if (file.isNull())
+    return;
   // start critical section
   m_lock.lock();
-  QSharedPointer<QFile> file = m_file;
-  if (file.isNull() || !file->open(QIODevice::ReadOnly | QIODevice::Text))
-    return;
-  // dump stored data
-  for (;;)
+  if (file->open(QIODevice::ReadOnly | QIODevice::Text))
   {
-    QList<QByteArray*> row = m_formater->deserialize(file->readLine(0x3ff));
-    if (row.length() == 0)
-      break;
-    else if (row.length() >= 6 && *row[0] == TAG_WAYPT)
+    // dump stored data
+    for (;;)
     {
-      osmscout::Timestamp ts(std::chrono::milliseconds(static_cast<qint64>(std::round(QString::fromUtf8(row[1]->constData()).toDouble() * 1000))));
-      double lat = QString::fromUtf8(row[2]->constData()).toDouble();
-      double lon = QString::fromUtf8(row[3]->constData()).toDouble();
-      QString symbol(row[6]->constData());
-      QString name(row[7]->constData());
-      emit positionMarked(osmscout::GeoCoord(lat, lon), symbol, name);
+      QList<QByteArray*> row = m_formater->deserialize(file->readLine(0x3ff));
+      if (row.length() == 0)
+        break;
+      else if (row.length() >= 6 && *row[0] == TAG_WAYPT)
+      {
+        osmscout::Timestamp ts(std::chrono::milliseconds(static_cast<qint64>(std::round(QString::fromUtf8(row[1]->constData()).toDouble() * 1000))));
+        double lat = QString::fromUtf8(row[2]->constData()).toDouble();
+        double lon = QString::fromUtf8(row[3]->constData()).toDouble();
+        QString symbol(row[6]->constData());
+        QString name(row[7]->constData());
+        emit positionMarked(osmscout::GeoCoord(lat, lon), symbol, name);
+      }
+      else if (row.length() >= 6 && *row[0] == TAG_TRKPT)
+      {
+        osmscout::Timestamp ts(std::chrono::milliseconds(static_cast<qint64>(std::round(QString::fromUtf8(row[1]->constData()).toDouble() * 1000))));
+        double lat = QString::fromUtf8(row[2]->constData()).toDouble();
+        double lon = QString::fromUtf8(row[3]->constData()).toDouble();
+        emit positionRecorded(osmscout::GeoCoord(lat, lon));
+      }
+      qDeleteAll(row);
     }
-    else if (row.length() >= 6 && *row[0] == TAG_TRKPT)
+    file->close();
+    // dump in memory data
+    for (auto& p : m_segment)
     {
-      osmscout::Timestamp ts(std::chrono::milliseconds(static_cast<qint64>(std::round(QString::fromUtf8(row[1]->constData()).toDouble() * 1000))));
-      double lat = QString::fromUtf8(row[2]->constData()).toDouble();
-      double lon = QString::fromUtf8(row[3]->constData()).toDouble();
-      emit positionRecorded(osmscout::GeoCoord(lat, lon));
+      emit positionRecorded(p.coord);
     }
-    qDeleteAll(row);
-  }
-  file->close();
-  // dump in memory data
-  for (auto& p : m_segment)
-  {
-    emit positionRecorded(p.coord);
-  }
-  if (!m_mark.isNull())
-  {
-    emit positionMarked(m_mark->coord, QString::fromUtf8(m_mark->symbol.value_or(MARK_SYMBOL).data()), QString::fromUtf8(m_mark->name.value_or("").data()));
+    if (!m_mark.isNull())
+    {
+      emit positionMarked(m_mark->coord, QString::fromUtf8(m_mark->symbol.value_or(MARK_SYMBOL).data()), QString::fromUtf8(m_mark->name.value_or("").data()));
+    }
   }
   m_lock.unlock();
 }
