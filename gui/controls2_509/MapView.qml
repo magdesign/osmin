@@ -1135,9 +1135,9 @@ MapPage {
         target: Service
         onStatusChanged: {
             if (Service.status === Service.ServiceConnected) {
-                popInfo.open("Tracker service is connected", "limegreen", "black");
+                popInfo.open(qsTr("Tracker service is connected"), "limegreen", "black");
             } else {
-                popInfo.open("Tracker service has been disconnected");
+                popInfo.open(qsTr("Tracker service has been disconnected"));
             }
         }
     }
