@@ -57,13 +57,15 @@
 #define APP_VERSION "Undefined"
 #endif
 
+/* The name of the service end-point must include the revision of the API */
+#define SERVICE_URL               "local:osmin41"
+#define SERVICE_FLAG              "-service"
+
 #define OSMIN_MODULE              "Osmin"
 #define RES_GPX_DIR               "GPX"
 #define RES_FAVORITES_FILE        "favorites.csv"
 #define RES_HILLSHADE_SERVER_FILE "hillshade-tile-server.json"
 #define RES_HILLSHADE_FILE_SAMPLE "hillshade-tile-server.json.sample"
-#define SERVICE_ARGS              "-service"
-#define SERVICE_URL               "local:osmin"
 
 #include <osmscoutclientqt/OSMScoutQt.h>
 // Custom QML objects
@@ -111,6 +113,7 @@ QObject* getGPXListModel(QQmlEngine *engine, QJSEngine *scriptEngine);
 QObject* getRemoteService(QQmlEngine *engine, QJSEngine *scriptEngine);
 QObject* getRemoteTracker(QQmlEngine *engine, QJSEngine *scriptEngine);
 QObject* getUtils(QQmlEngine *engine, QJSEngine *scriptEngine);
+bool checkServiceUrl(const char *url, int timeout);
 
 #if defined(QT_STATICPLUGIN)
 void importStaticPlugins(QQmlEngine* engine)
@@ -130,7 +133,7 @@ int main(int argc, char *argv[])
 {
   int ret = 0;
 
-  if (argc > 1 && strcmp(argv[1], "-service") == 0)
+  if (argc > 1 && strcmp(argv[1], SERVICE_FLAG) == 0)
   {
 
     /************************************************************************/
@@ -217,9 +220,11 @@ int main(int argc, char *argv[])
                                                   QtAndroid::androidActivity().object());
 #else
     QScopedPointer<QProcess> psvc(new QProcess());
-    if (argc <= 1 || strcmp(argv[1], "-noservice") != 0)
+    if (!checkServiceUrl(SERVICE_URL, 100))
     {
-      psvc->start(argv[0], QString(SERVICE_ARGS).split(' '));
+      QStringList pargs;
+      pargs.append(SERVICE_FLAG);
+      psvc->start(argv[0], pargs);
     }
 #endif
 
@@ -420,11 +425,6 @@ int main(int argc, char *argv[])
     qmlRegisterType<RemoteCompass>(OSMIN_MODULE, 1, 0, "Compass");
     qmlRegisterType<RemotePositionSource>(OSMIN_MODULE, 1, 0, "PositionSource");
     qmlRegisterType<RemotePosition>(OSMIN_MODULE, 1, 0, "Position");
-
-    // register the generic compass
-    //qmlRegisterType<BuiltInCompass>(OSMIN_MODULE, 1, 0, "Compass");
-    //QScopedPointer<BuiltInSensorPlugin> sensor(new BuiltInSensorPlugin());
-    //sensor->registerSensors();
 
     QSettings settings;
 #ifndef SAILFISHOS
@@ -645,4 +645,12 @@ QObject* getUtils(QQmlEngine *engine, QJSEngine *scriptEngine)
   if (utils == nullptr)
     utils = new osmin::Utils();
   return utils;
+}
+
+bool checkServiceUrl(const char *url, int timeout)
+{
+  QRemoteObjectNode node;
+  node.connectToNode(QUrl(QString::fromUtf8(url)));
+  QScopedPointer<ServiceMessengerReplica> replica(node.acquire<ServiceMessengerReplica>());
+  return (replica->waitForSource(timeout));
 }
