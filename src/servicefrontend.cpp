@@ -11,6 +11,7 @@ ServiceFrontend::ServiceFrontend(const QString& url)
   this->moveToThread(m_t);
   connect(m_t, &QThread::finished, this, &ServiceFrontend::onFinished);
   connect(m_t, &QThread::started, this, &ServiceFrontend::run);
+  connect(this, &ServiceFrontend::ping, this, &ServiceFrontend::onPing, Qt::QueuedConnection);
   m_t->start();
 }
 
@@ -29,47 +30,65 @@ void ServiceFrontend::terminate()
 
 void ServiceFrontend::setRecording(const QString &filename)
 {
-  m_messenger->tracker_setRecording(filename);
+  auto m = m_messenger;
+  if (!m.isNull())
+    m->tracker_setRecording(filename);
 }
 
 void ServiceFrontend::resetTrackingData()
 {
-  m_messenger->tracker_resetData();
+  auto m = m_messenger;
+  if (!m.isNull())
+    m->tracker_resetData();
 }
 
 void ServiceFrontend::startRecording()
 {
-  m_messenger->tracker_startRecording();
+  auto m = m_messenger;
+  if (!m.isNull())
+    m->tracker_startRecording();
 }
 
 void ServiceFrontend::stopRecording()
 {
-  m_messenger->tracker_stopRecording();
+  auto m = m_messenger;
+  if (!m.isNull())
+    m->tracker_stopRecording();
 }
 
 void ServiceFrontend::pinfPosition()
 {
-  m_messenger->tracker_pinPosition();
+  auto m = m_messenger;
+  if (!m.isNull())
+    m->tracker_pinPosition();
 }
 
 void ServiceFrontend::markPosition(const QString &symbol, const QString &name, const QString &description)
 {
-  m_messenger->tracker_markPosition(symbol, name, description);
+  auto m = m_messenger;
+  if (!m.isNull())
+    m->tracker_markPosition(symbol, name, description);
 }
 
 void ServiceFrontend::setCompassDataRate(int datarate)
 {
-  m_messenger->compass_setDataRate(datarate);
+  auto m = m_messenger;
+  if (!m.isNull())
+    m->compass_setDataRate(datarate);
 }
 
 void ServiceFrontend::setPositionUpdateInterval(int interval)
 {
-  m_messenger->position_setUpdateInterval(interval);
+  auto m = m_messenger;
+  if (!m.isNull())
+    m->position_setUpdateInterval(interval);
 }
 
 void ServiceFrontend::setPreferedPositioningMethods(int methods)
 {
-  m_messenger->position_setPreferredPositioningMethods(methods);
+  auto m = m_messenger;
+  if (!m.isNull())
+    m->position_setPreferredPositioningMethods(methods);
 }
 
 void ServiceFrontend::run()
@@ -115,8 +134,6 @@ void ServiceFrontend::run()
   connect(m_messenger.data(), &ServiceMessengerReplica::tracker_positionChanged, this, &ServiceFrontend::trackerPositionChanged);
   connect(m_messenger.data(), &ServiceMessengerReplica::tracker_dataChanged, this, &ServiceFrontend::trackerDataChanged);
 
-  connect(this, &ServiceFrontend::ping, this, &ServiceFrontend::onPing, Qt::QueuedConnection);
-
   emit serviceConnected();
 }
 
@@ -132,7 +149,9 @@ void ServiceFrontend::onStateChanged(QRemoteObjectReplica::State state, QRemoteO
 
 void ServiceFrontend::onPing(const QString &message)
 {
-  m_messenger->ping(message);
+  auto m = m_messenger;
+  if (!m.isNull())
+    m->ping(message);
 }
 
 void ServiceFrontend::onFinished()

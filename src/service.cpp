@@ -36,6 +36,9 @@ Service::~Service()
 
 void Service::run()
 {
+  if (m_run.fetchAndAddAcquire(1) != 0)
+    return;
+
   m_tracker = new Tracker();
   m_tracker->init(m_rootDir);
   connect(m_tracker, &Tracker::trackerProcessingChanged, this, &Service::onTrackerProcessingChanged);
@@ -72,7 +75,6 @@ void Service::run()
   QVariant rec = m_settings.value("trackerRecording");
   if (!rec.isNull() && rec.toString().length() > 0)
   {
-    qDebug("Resume recording '%s'", rec.toString().toUtf8().constData());
     emit tracker_resumeRecording();
     m_tracker->resumeRecording(rec.toString());
   }
@@ -89,8 +91,10 @@ void Service::ping(const QString &message)
   onCompassDataRateChanged();
   onCompassReadingChanged();
   emit position_activeChanged(m_positionActive);
-  emit pong(message);
   m_position->requestUpdate(POSITION_UPDATE_INTERVAL);
+  if (message == "ALL")
+    m_tracker->dumpRecording();
+  emit pong(message);
 }
 
 void Service::compass_setActive(bool active)

@@ -3,6 +3,7 @@
 
 #include <QObject>
 #include <QThread>
+#include <QAtomicInt>
 #include <QSettings>
 #include <QGeoPositionInfoSource>
 #include <QElapsedTimer>
@@ -66,6 +67,7 @@ private slots:
   void onTrackerDataChanged();
 
 private:
+  QAtomicInt m_run;
   QString m_url;
   QString m_rootDir;
   QSettings m_settings;

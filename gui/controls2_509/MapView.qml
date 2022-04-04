@@ -61,6 +61,9 @@ MapPage {
     }
 
     Component.onCompleted: {
+        // Syncing all data from the tracker
+        Service.ping("ALL");
+        // show current coordinates
         if (positionSource._posValid) {
             map.showCoordinates(positionSource._lat, positionSource._lon);
         }
@@ -1036,9 +1039,9 @@ MapPage {
         }
         onIsRecordingChanged: {
             if (!Tracker.isRecording) {
+                //overlayManager.removeRecording();
+                //overlayManager.removeMark(1);
                 overlayRecording.clear();
-                overlayManager.removeRecording();
-                overlayManager.removeMark(1);
             }
         }
         onTrackerPositionRecorded: {
@@ -1136,6 +1139,11 @@ MapPage {
         onStatusChanged: {
             if (Service.status === Service.ServiceConnected) {
                 popInfo.open(qsTr("Tracker service is connected"), "limegreen", "black");
+                // clear all data before ping ALL
+                overlayManager.removeRecording();
+                overlayManager.removeMark(1);
+                overlayRecording.clear();
+                Service.ping("ALL");
             } else {
                 popInfo.open(qsTr("Tracker service has been disconnected"));
             }

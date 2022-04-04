@@ -321,14 +321,7 @@ ApplicationWindow {
         Osmin.Converter.southeast = qsTr("southeast");
         Osmin.Converter.system = settings.systemOfUnits;
         positionSource.active = true;
-        Osmin.Service.statusChanged.connect(handleServiceStatus);
         launcher.start();
-    }
-
-    function handleServiceStatus() {
-        if (Osmin.Service.status === Osmin.Service.ServiceConnected) {
-            Osmin.Service.ping("Hello");
-        }
     }
 
     // The initial stacked page (banner) will set the startup mode.
