@@ -1,18 +1,18 @@
-#ifndef SERVICECOMPASS_H
-#define SERVICECOMPASS_H
+#ifndef REMOTECOMPASS_H
+#define REMOTECOMPASS_H
+
+#include "remote.h"
 
 #include <QObject>
 
-class ServiceRemote;
-
-class ServiceCompassReading : public QObject
+class RemoteCompassReading : public QObject
 {
   Q_OBJECT
   Q_PROPERTY(float azimuth READ getAzimuth CONSTANT)
   Q_PROPERTY(float calibrationLevel READ getCalibrationLevel CONSTANT)
 
 public:
-  explicit ServiceCompassReading(QObject * parent = nullptr) : QObject(parent) { }
+  explicit RemoteCompassReading(QObject * parent = nullptr) : QObject(parent) { }
 
   float getAzimuth() { return m_azimuth; }
   float getCalibrationLevel() { return m_calibrationLevel; }
@@ -26,17 +26,17 @@ private:
   float m_calibrationLevel = 0.0f;
 };
 
-class ServiceCompass : public QObject
+class RemoteCompass : public QObject, public Remote
 {
   Q_OBJECT
-  Q_PROPERTY(ServiceCompassReading* reading READ getReading NOTIFY readingChanged)
+  Q_PROPERTY(RemoteCompassReading* reading READ getReading NOTIFY readingChanged)
   Q_PROPERTY(bool active READ getActive WRITE setActive NOTIFY activeChanged)
   Q_PROPERTY(int dataRate READ getDataRate WRITE setDataRate NOTIFY dataRateChanged)
 
 public:
-  explicit ServiceCompass(QObject * parent = nullptr) : QObject(parent), m_reading(this) { }
+  explicit RemoteCompass(QObject * parent = nullptr) : QObject(parent), m_reading(this) { }
 
-  ServiceCompassReading* getReading() { return &m_reading; }
+  RemoteCompassReading* getReading() { return &m_reading; }
   bool getActive() { return m_active; }
   int getDataRate() { return m_dataRate; }
   void setActive(bool active);
@@ -45,10 +45,11 @@ public:
   // for testing
   void set(float azimuth, float calibration)
   {
-    onReadingChanged(azimuth, calibration);
+    _readingChanged(azimuth, calibration);
   }
 
-  Q_INVOKABLE void connectToService(ServiceRemote * service);
+  Q_INVOKABLE void connectToService(QVariant service) override;
+  void connectToService(ServiceFrontendPtr& service) override;
 
 signals:
   // operations
@@ -58,14 +59,14 @@ signals:
   void dataRateChanged();
 
 private slots:
-  void onReadingChanged(float azimuth, float calibration);
-  void onDataRateChanged(int datarate);
+  void _readingChanged(float azimuth, float calibration);
+  void _dataRateChanged(int datarate);
 
 private:
-  ServiceRemote * m_service = nullptr;
-  ServiceCompassReading m_reading;
+  ServiceFrontendPtr m_service;
+  RemoteCompassReading m_reading;
   bool m_active = false;
   int m_dataRate = 0;
 };
 
-#endif // SERVICECOMPASS_H
+#endif // REMOTECOMPASS_H

@@ -1125,4 +1125,20 @@ MapPage {
             mapView.rotation = (map.view.angle + d);
         }
     }
+
+    ////////////////////////////////////////////////////////////////////////////
+    ////
+    //// About the tracker service
+    ////
+
+    Connections {
+        target: Service
+        onStatusChanged: {
+            if (Service.status === Service.ServiceConnected) {
+                popInfo.open("Tracker service is connected", "limegreen", "black");
+            } else {
+                popInfo.open("Tracker service has been disconnected");
+            }
+        }
+    }
 }

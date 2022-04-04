@@ -16,10 +16,10 @@
  */
 
 import QtQuick 2.2
-//import QtPositioning 5.2
-import Osmin 1.0 as BuiltIn
+//import QtPositioning 5.2 as Legacy
+import Osmin 1.0 as Osmin
 
-BuiltIn.ServicePositionSource {
+Osmin.PositionSource {
     id: positionSource
     property double _lat: 0.0
     property double _lon: 0.0
@@ -44,5 +44,5 @@ BuiltIn.ServicePositionSource {
     updateInterval: 1000
     //preferredPositioningMethods: PositionSource.SatellitePositioningMethods
 
-    Component.onCompleted: { connectToService(BuiltIn.Service) }
+    Component.onCompleted: { connectToService(Osmin.Service.getServiceHandle()) }
 }

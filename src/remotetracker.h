@@ -1,14 +1,13 @@
-#ifndef SERVICETRACKER_H
-#define SERVICETRACKER_H
+#ifndef REMOTETRACKER_H
+#define REMOTETRACKER_H
 
+#include "remote.h"
 #include <osmscoutclientqt/VehiclePosition.h>
 #include <osmscoutclientqt/RouteStep.h>
 
 #include <QObject>
 
-class ServiceRemote;
-
-class ServiceTracker : public QObject
+class RemoteTracker : public QObject, public Remote
 {
   Q_OBJECT
 
@@ -27,7 +26,7 @@ class ServiceTracker : public QObject
   //Q_PROPERTY(QObject* nextRouteStep READ getNextRoutStep NOTIFY nextStepChanged)
 
 public:
-  explicit ServiceTracker(QObject* parent = nullptr);
+  explicit RemoteTracker(QObject* parent = nullptr);
 
   osmscout::VehiclePosition* getTrackerPosition() const;
   double getElevation() const { return m_elevation; }
@@ -44,7 +43,8 @@ public:
   bool getProcessing() const { return m_busy; }
   bool getIsRecording() const { return m_isRecording; }
 
-  Q_INVOKABLE void connectToService(ServiceRemote * service);
+  Q_INVOKABLE void connectToService(QVariant service) override;
+  void connectToService(ServiceFrontendPtr& service) override;
 
 signals:
   // operations
@@ -65,11 +65,12 @@ signals:
   void resumeRecording();
 
 private slots:
-  void onTrackerIsRecordingChanged(bool recording);
-  void onTrackerRecordingChanged(const QString& filename);
-  void onTrackerProcessingChanged(bool processing);
-  void onTrackerPositionChanged(bool valid, double lat, double lon, double bearing);
-  void onTrackerDataChanged(
+  // internal events
+  void _trackerIsRecordingChanged(bool recording);
+  void _trackerRecordingChanged(const QString& filename);
+  void _trackerProcessingChanged(bool processing);
+  void _trackerPositionChanged(bool valid, double lat, double lon, double bearing);
+  void _trackerDataChanged(
                   double elevation,
                   double currentSpeed,
                   double distance,
@@ -79,7 +80,7 @@ private slots:
                   double maxSpeed);
 
 private:
-  ServiceRemote * m_service = nullptr;
+  ServiceFrontendPtr m_service;
   osmscout::Vehicle m_vehicle;
   osmscout::PositionAgent::PositionState m_vehicleState;
   osmscout::GeoCoord m_vehicleCoord;
@@ -96,4 +97,4 @@ private:
   bool m_isRecording;
 };
 
-#endif // SERVICETRACKER_H
+#endif // REMOTETRACKER_H

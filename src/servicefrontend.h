@@ -1,5 +1,5 @@
-#ifndef SERVICEREMOTE_H
-#define SERVICEREMOTE_H
+#ifndef SERVICEFRONTEND_H
+#define SERVICEFRONTEND_H
 
 #include <osmscoutclientqt/VehiclePosition.h>
 #include <osmscoutclientqt/RouteStep.h>
@@ -10,14 +10,18 @@
 #include <QThread>
 #include "rep_servicemessenger_replica.h"
 
-class ServiceRemote : public QObject
+class ServiceFrontend;
+
+typedef QSharedPointer<ServiceFrontend> ServiceFrontendPtr;
+
+class ServiceFrontend : public QObject
 {
   Q_OBJECT
 
 public:
-  ServiceRemote(const QString& url);
-  virtual ~ServiceRemote();
-  ServiceRemote(const ServiceRemote&) = delete;
+  ServiceFrontend(const QString& url);
+  virtual ~ServiceFrontend();
+  ServiceFrontend(const ServiceFrontend&) = delete;
 
   void terminate();
 
@@ -51,6 +55,9 @@ signals:
   void positionUpdateIntervalChanged(int interval);
   void positionPreferredPositioningMethodsChanged(int methods);
 
+  void serviceDisconnected();
+  void serviceConnected();
+
 public slots:
   void setRecording(const QString& filename);
   void resetTrackingData();
@@ -75,4 +82,4 @@ private:
   QSharedPointer<ServiceMessengerReplica> m_messenger;
 };
 
-#endif // SERVICEREMOTE_H
+#endif // SERVICEFRONTEND_H

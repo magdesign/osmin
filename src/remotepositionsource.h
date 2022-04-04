@@ -1,11 +1,11 @@
-#ifndef SERVICEPOSITIONSOURCE_H
-#define SERVICEPOSITIONSOURCE_H
+#ifndef REMOTEPOSITIONSOURCE_H
+#define REMOTEPOSITIONSOURCE_H
+
+#include "remote.h"
 
 #include <QObject>
 
-class ServiceRemote;
-
-class ServicePosition : public QObject
+class RemotePosition : public QObject
 {
   Q_OBJECT
   Q_PROPERTY(bool valid READ getValid CONSTANT)
@@ -16,7 +16,7 @@ class ServicePosition : public QObject
   Q_PROPERTY(float horizontalAccuracy READ getHorizontalAccuracy CONSTANT)
 
 public:
-  explicit ServicePosition(QObject * parent = nullptr) : QObject(parent) { }
+  explicit RemotePosition(QObject * parent = nullptr) : QObject(parent) { }
 
   bool getValid() { return m_valid; }
   double getLatitude() { return m_latitude; }
@@ -42,18 +42,18 @@ private:
   double m_altitude;
 };
 
-class ServicePositionSource: public QObject
+class RemotePositionSource: public QObject, public Remote
 {
   Q_OBJECT
-  Q_PROPERTY(ServicePosition* position READ getPosition NOTIFY positionChanged)
+  Q_PROPERTY(RemotePosition* position READ getPosition NOTIFY positionChanged)
   Q_PROPERTY(bool active READ getActive WRITE setActive NOTIFY activeChanged)
   Q_PROPERTY(int updateInterval READ getUpdateInterval WRITE setUpdateInterval NOTIFY updateIntervalChanged)
   Q_PROPERTY(int preferredPositioningMethods READ getPositioningMethods WRITE setPositioningMethods NOTIFY preferredPositioningMethodsChanged)
 
 public:
-  explicit ServicePositionSource(QObject * parent = nullptr) : QObject(parent), m_position(this) { }
+  explicit RemotePositionSource(QObject * parent = nullptr) : QObject(parent), m_position(this) { }
 
-  ServicePosition* getPosition() { return &m_position; }
+  RemotePosition* getPosition() { return &m_position; }
   bool getActive() { return m_active; }
   int getUpdateInterval() { return m_updateInterval; }
   int getPositioningMethods() { return m_positioningMethods; }
@@ -63,10 +63,11 @@ public:
   // for testing
   void set(bool valid, double lat, double lon, bool haccvalid, float hacc, double alt)
   {
-    onPositionUpdated(valid, lat, lon, haccvalid, hacc, alt);
+    _positionUpdated(valid, lat, lon, haccvalid, hacc, alt);
   }
 
-  Q_INVOKABLE void connectToService(ServiceRemote * service);
+  Q_INVOKABLE void connectToService(QVariant service) override;
+  void connectToService(ServiceFrontendPtr& service) override;
 
 signals:
   // operations
@@ -78,16 +79,16 @@ signals:
   void preferredPositioningMethodsChanged();
 
 private slots:
-  void onPositionUpdated(bool valid, double lat, double lon, bool haccvalid, float hacc, double alt);
-  void onUpdateIntervalChanged(int interval);
-  void onPreferredPositioningMethodsChanged(int methods);
+  void _positionUpdated(bool valid, double lat, double lon, bool haccvalid, float hacc, double alt);
+  void _updateIntervalChanged(int interval);
+  void _preferredPositioningMethodsChanged(int methods);
 
 private:
-  ServiceRemote * m_service = nullptr;
-  ServicePosition m_position;
+  ServiceFrontendPtr m_service;
+  RemotePosition m_position;
   bool m_active = false;
   int m_updateInterval = 0;
   int m_positioningMethods;
 };
 
-#endif // SERVICEPOSITIONSOURCE_H
+#endif // REMOTEPOSITIONSOURCE_H

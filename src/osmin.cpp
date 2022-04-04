@@ -85,10 +85,11 @@
 #include "compass/plugin.h"
 
 #include "service.h"
-#include "serviceremote.h"
-#include "servicecompass.h"
-#include "servicepositionsource.h"
-#include "servicetracker.h"
+#include "servicefrontend.h"
+#include "remoteservice.h"
+#include "remotecompass.h"
+#include "remotepositionsource.h"
+#include "remotetracker.h"
 
 void setupApp(QGuiApplication& app);
 void prepareTranslator(QGuiApplication& app, const QString& translationPath, const QString& translationPrefix, const QLocale& locale);
@@ -101,14 +102,14 @@ QDir g_resDir;
 
 QFile*            g_favoritesFile         = nullptr;
 GPXListModel*     g_GPXListModel          = nullptr;
-ServiceRemote*    g_ServiceRemote         = nullptr;
-ServiceTracker*   g_ServiceTracker        = nullptr;
+RemoteService*    g_remoteService         = nullptr;
+RemoteTracker*    g_remoteTracker         = nullptr;
 QString*          g_hillshadeProvider     = nullptr;
 
 QObject* getFavoritesModel(QQmlEngine *engine, QJSEngine *scriptEngine);
 QObject* getGPXListModel(QQmlEngine *engine, QJSEngine *scriptEngine);
-QObject* getServiceTracker(QQmlEngine *engine, QJSEngine *scriptEngine);
-QObject* getServiceRemote(QQmlEngine *engine, QJSEngine *scriptEngine);
+QObject* getRemoteService(QQmlEngine *engine, QJSEngine *scriptEngine);
+QObject* getRemoteTracker(QQmlEngine *engine, QJSEngine *scriptEngine);
 QObject* getUtils(QQmlEngine *engine, QJSEngine *scriptEngine);
 
 #if defined(QT_STATICPLUGIN)
@@ -216,12 +217,20 @@ int main(int argc, char *argv[])
                                                   QtAndroid::androidActivity().object());
 #else
     QScopedPointer<QProcess> psvc(new QProcess());
-    psvc->start(argv[0], QString(SERVICE_ARGS).split(' '));
+    if (argc <= 1 || strcmp(argv[1], "-noservice") != 0)
+    {
+      psvc->start(argv[0], QString(SERVICE_ARGS).split(' '));
+    }
 #endif
 
-    g_ServiceRemote = new ServiceRemote(SERVICE_URL);
-    g_ServiceTracker = new ServiceTracker();
-    g_ServiceTracker->connectToService(g_ServiceRemote);
+    // init service frontend
+    ServiceFrontendPtr serviceFrontend(new ServiceFrontend(SERVICE_URL));
+    // create singleton for the remote service
+    g_remoteService = new RemoteService();
+    g_remoteService->connectToService(serviceFrontend);
+    // create singleton for the remote tracker
+    g_remoteTracker = new RemoteTracker();
+    g_remoteTracker->connectToService(serviceFrontend);
 
     // check assets
     QFile resVersion(g_resDir.absoluteFilePath("version"));
@@ -405,16 +414,17 @@ int main(int argc, char *argv[])
     qmlRegisterType<GPXFileModel>(OSMIN_MODULE, 1, 0, "GPXFileModel");
     qRegisterMetaType<GPXFileModel::GPXObjectRoles>("GPXFileModel::Roles");
     qRegisterMetaType<QList<osmscout::OverlayObject*> >("QList<osmscout::OverlayObject*>");
-    qmlRegisterSingletonType<ServiceTracker>(OSMIN_MODULE, 1, 0, "Tracker", getServiceTracker);
-    qmlRegisterSingletonType<ServiceRemote>(OSMIN_MODULE, 1, 0, "Service", getServiceRemote);
-    qmlRegisterType<ServiceCompass>(OSMIN_MODULE, 1, 0, "ServiceCompass");
-    qmlRegisterType<ServicePositionSource>(OSMIN_MODULE, 1, 0, "ServicePositionSource");
-    qmlRegisterType<ServicePosition>(OSMIN_MODULE, 1, 0, "ServicePosition");
+    qmlRegisterSingletonType<RemoteService>(OSMIN_MODULE, 1, 0, "Service", getRemoteService);
+    qRegisterMetaType<RemoteService::ServiceStatus>("Service.ServiceStatus");
+    qmlRegisterSingletonType<RemoteTracker>(OSMIN_MODULE, 1, 0, "Tracker", getRemoteTracker);
+    qmlRegisterType<RemoteCompass>(OSMIN_MODULE, 1, 0, "Compass");
+    qmlRegisterType<RemotePositionSource>(OSMIN_MODULE, 1, 0, "PositionSource");
+    qmlRegisterType<RemotePosition>(OSMIN_MODULE, 1, 0, "Position");
 
     // register the generic compass
-    qmlRegisterType<BuiltInCompass>(OSMIN_MODULE, 1, 0, "Compass");
-    QScopedPointer<BuiltInSensorPlugin> sensor(new BuiltInSensorPlugin());
-    sensor->registerSensors();
+    //qmlRegisterType<BuiltInCompass>(OSMIN_MODULE, 1, 0, "Compass");
+    //QScopedPointer<BuiltInSensorPlugin> sensor(new BuiltInSensorPlugin());
+    //sensor->registerSensors();
 
     QSettings settings;
 #ifndef SAILFISHOS
@@ -497,7 +507,7 @@ int main(int argc, char *argv[])
 
     ret = app.exec();
     osmscout::OSMScoutQt::FreeInstance();
-    g_ServiceRemote->terminate();
+    serviceFrontend->terminate();
 
 #if defined(Q_OS_ANDROID)
     QAndroidJniObject::callStaticMethod<void>("io/github/janbar/osmin/QtAndroidService",
@@ -505,9 +515,12 @@ int main(int argc, char *argv[])
                                                   "(Landroid/content/Context;)V",
                                                   QtAndroid::androidActivity().object());
 #else
-    psvc->terminate();
-    if (!psvc->waitForFinished())
-      psvc->kill();
+    if (psvc->state() != QProcess::NotRunning)
+    {
+      psvc->terminate();
+      if (!psvc->waitForFinished())
+        psvc->kill();
+    }
 #endif
 
   }
@@ -610,18 +623,18 @@ QObject* getGPXListModel(QQmlEngine *engine, QJSEngine *scriptEngine)
   return g_GPXListModel;
 }
 
-QObject* getServiceTracker(QQmlEngine *engine, QJSEngine *scriptEngine)
+QObject* getRemoteTracker(QQmlEngine *engine, QJSEngine *scriptEngine)
 {
   Q_UNUSED(engine)
   Q_UNUSED(scriptEngine)
-  return g_ServiceTracker;
+  return g_remoteTracker;
 }
 
-QObject* getServiceRemote(QQmlEngine *engine, QJSEngine *scriptEngine)
+QObject* getRemoteService(QQmlEngine *engine, QJSEngine *scriptEngine)
 {
   Q_UNUSED(engine)
   Q_UNUSED(scriptEngine)
-  return g_ServiceRemote;
+  return g_remoteService;
 }
 
 QObject* getUtils(QQmlEngine *engine, QJSEngine *scriptEngine)
