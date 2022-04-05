@@ -36,7 +36,7 @@ public class QtAndroidService extends QtService
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             builder.setChannelId(CHANNEL_ID);
         }
-        builder.setContentText("The tracking service is started")
+        builder.setContentText(getResources().getString(R.string.svc_running))
                .setSmallIcon(android.R.drawable.ic_menu_mylocation);
 
         startForeground(1, builder.build());
