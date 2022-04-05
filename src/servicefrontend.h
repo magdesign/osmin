@@ -63,7 +63,7 @@ public slots:
   void resetTrackingData();
   void startRecording();
   void stopRecording();
-  void pinfPosition();
+  void pinPosition();
   void markPosition(const QString& symbol, const QString& name, const QString& description);
   void setCompassDataRate(int datarate);
   void setPositionUpdateInterval(int interval);

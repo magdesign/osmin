@@ -11,6 +11,7 @@
 #include "rep_servicemessenger_source.h"
 #include "tracker.h"
 
+#define SETTING_RECORDING_FILENAME      "trackerRecording"
 #define COMPASS_DATARATE          2     // default
 #define COMPASS_MIN_INTERVAL      250   // 250 ms
 #define POSITION_UPDATE_INTERVAL  1000  // 1 sec

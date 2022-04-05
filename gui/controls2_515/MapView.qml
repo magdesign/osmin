@@ -1032,9 +1032,6 @@ MapPage {
 
     Connections {
         target: Tracker
-        function onRecordingChanged() {
-            settings.trackerRecording = Tracker.recording;
-        }
         function onRecordingFailed() {
             popInfo.open(qsTr("Track recording failed"));
         }

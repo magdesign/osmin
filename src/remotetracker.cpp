@@ -56,7 +56,7 @@ void RemoteTracker::connectToService(ServiceFrontendPtr& service)
     disconnect(this, &RemoteTracker::reset, m_service.data(), &ServiceFrontend::resetTrackingData);
     disconnect(this, &RemoteTracker::startRecording, m_service.data(), &ServiceFrontend::startRecording);
     disconnect(this, &RemoteTracker::stopRecording, m_service.data(), &ServiceFrontend::stopRecording);
-    disconnect(this, &RemoteTracker::pinPosition, m_service.data(), &ServiceFrontend::pinfPosition);
+    disconnect(this, &RemoteTracker::pinPosition, m_service.data(), &ServiceFrontend::pinPosition);
     disconnect(this, &RemoteTracker::markPosition, m_service.data(), &ServiceFrontend::markPosition);
   }
   m_service = service;
@@ -76,7 +76,7 @@ void RemoteTracker::connectToService(ServiceFrontendPtr& service)
     connect(this, &RemoteTracker::reset, m_service.data(), &ServiceFrontend::resetTrackingData);
     connect(this, &RemoteTracker::startRecording, m_service.data(), &ServiceFrontend::startRecording);
     connect(this, &RemoteTracker::stopRecording, m_service.data(), &ServiceFrontend::stopRecording);
-    connect(this, &RemoteTracker::pinPosition, m_service.data(), &ServiceFrontend::pinfPosition);
+    connect(this, &RemoteTracker::pinPosition, m_service.data(), &ServiceFrontend::pinPosition);
     connect(this, &RemoteTracker::markPosition, m_service.data(), &ServiceFrontend::markPosition);
   }
 }

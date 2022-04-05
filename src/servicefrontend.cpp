@@ -57,7 +57,7 @@ void ServiceFrontend::stopRecording()
     m->tracker_stopRecording();
 }
 
-void ServiceFrontend::pinfPosition()
+void ServiceFrontend::pinPosition()
 {
   auto m = m_messenger;
   if (!m.isNull())

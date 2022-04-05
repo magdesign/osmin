@@ -72,11 +72,11 @@ void Service::run()
   }
 
   // resume current recording
-  QVariant rec = m_settings.value("trackerRecording");
-  if (!rec.isNull() && rec.toString().length() > 0)
+  QString setting = m_settings.value(SETTING_RECORDING_FILENAME).toString();
+  if (setting.length() > 0)
   {
     emit tracker_resumeRecording();
-    m_tracker->resumeRecording(rec.toString());
+    m_tracker->resumeRecording(setting);
   }
 }
 
@@ -235,7 +235,11 @@ void Service::onPositionSupportedPositioningMethodsChanged()
 
 void Service::onTrackerRecordingChanged()
 {
-  emit tracker_recordingChanged(m_tracker->getRecording());
+  QString recording = m_tracker->getRecording();
+  QString setting = m_settings.value(SETTING_RECORDING_FILENAME).toString();
+  if (setting != recording)
+    m_settings.setValue(SETTING_RECORDING_FILENAME, QVariant::fromValue(recording));
+  emit tracker_recordingChanged(recording);
   emit tracker_isRecordingChanged(m_tracker->getIsRecording());
 }
 
