@@ -633,17 +633,14 @@ void TrackerModule::onDumpRecording()
       qDeleteAll(row);
     }
     file->close();
-    // dump in memory data
-    for (auto& p : m_segment)
-    {
-      emit positionRecorded(p.coord);
-    }
-    if (!m_mark.isNull())
-    {
-      emit positionMarked(m_mark->coord, QString::fromUtf8(m_mark->symbol.value_or(MARK_SYMBOL).data()), QString::fromUtf8(m_mark->name.value_or("").data()));
-    }
   }
+  // dump in memory data
+  for (auto& p : m_segment)
+    emit positionRecorded(p.coord);
+  if (!m_mark.isNull())
+    emit positionMarked(m_mark->coord, QString::fromUtf8(m_mark->symbol.value_or(MARK_SYMBOL).data()), QString::fromUtf8(m_mark->name.value_or("").data()));
   m_lock.unlock();
+  // end critical section
 }
 
 void TrackerModule::record()
