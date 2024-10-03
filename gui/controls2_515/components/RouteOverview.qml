@@ -52,7 +52,7 @@ Item {
         delegate: Row {
             id: row
             spacing: units.gu(2)
-            width: parent.width
+            width: stepsView.width
             height: Math.max(stepInfo.implicitHeight, icon.height)
 
             WAYIcon {
@@ -78,7 +78,7 @@ Item {
                                 ? Converter.panelDistance(model.distanceDelta) + " ~ " + Converter.panelDurationHM(model.timeDelta) + " Δ"
                                 : Converter.panelDistance(model.distance) + " ~ " + Converter.panelDurationHM(model.time)
                     }
-                    font.pointSize: units.fs("small")
+                    font.pixelSize: units.fs("small")
                     horizontalAlignment: Label.AlignRight
                     MouseArea {
                         anchors.fill: parent
@@ -92,7 +92,7 @@ Item {
                     width: parent.width
                     color: (index === stepsView.thisStep ? styleMap.popover.highlightedColor : styleMap.popover.foregroundColor)
                     text: model.description
-                    font.pointSize: units.fs("small")
+                    font.pixelSize: units.fs("small")
                     wrapMode: Text.Wrap
                 }
             }

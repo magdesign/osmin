@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2020-2022
+ * Copyright (C) 2020-2024
  *      Jean-Luc Barriere <jlbarriere68@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
@@ -39,9 +39,6 @@
 #include <QAndroidJniObject>
 #endif
 
-#define DIR_MAPS          "Maps"
-#define DIR_VOICES        "voices"
-#define DIR_RES           "resources"
 #define APP_TR_NAME       "osmin"                   // translations base name
 #define ORG_NAME          "io.github.janbar"        // organisation id
 #define APP_NAME          "osmin"                   // application name
@@ -58,15 +55,18 @@
 #define APP_VERSION "Undefined"
 #endif
 
-/* The name of the service end-point must include the revision of the API */
-#define SERVICE_URL                 "local:osmin42"
 #define SERVICE_FLAG                "-service"
-
 #define OSMIN_MODULE                "Osmin"         // QML module name
-#define RES_GPX_DIR                 "GPX"
+#define DIR_MAPS                    "maps"
+#define DIR_VOICES                  "voices"
+#define DIR_RES                     "resources"
+#define DIR_GPX                     "GPX"
 #define RES_FAVORITES_FILE          "favorites.csv"
 #define RES_HILLSHADE_SERVER_FILE   "hillshade-tile-server.json"
 #define RES_HILLSHADE_FILE_SAMPLE   "hillshade-tile-server.json.sample"
+#define RES_MAP_PROVIDERS           "map-providers.json"
+#define RES_VOICE_PROVIDERS         "voice-providers.json"
+#define RES_TILE_PROVIDERS          "online-tile-providers.json"
 
 #include <osmscoutclientqt/OSMScoutQt.h>
 // Custom QML objects
@@ -75,8 +75,10 @@
 #include <osmscoutclientqt/RoutingModel.h>
 #include <osmscoutclientqt/AvailableMapsModel.h>
 #include <osmscoutclientqt/MapDownloadsModel.h>
-#include <osmscoutclientqt/Settings.h>
-#include <osmscout/util/Logger.h>
+#include <osmscoutclientqt/QmlSettings.h>
+
+// Configure Logger
+#include <osmscout/log/Logger.h>
 
 #include "platformextras.h"
 #include "mapextras.h"
@@ -86,7 +88,6 @@
 #include "gpxfilemodel.h"
 #include "qmlsortfiltermodel.h"
 #include "utils.h"
-#include "compass/plugin.h"
 
 #include "service.h"
 #include "servicefrontend.h"
@@ -102,10 +103,15 @@ void prepareTranslator(QGuiApplication& app, const QString& translationPath, con
 void signalCatched(int signal);
 void doExit(int code);
 bool testServiceUrl(const char *url, int timeout);
+QString basename(const QString& filepath);
+bool migration(const QString& version, const QString& pathapp, const QString& pathdata);
 
-QDir g_dataDir;
-QDir g_homeDir;
-QDir g_resDir;
+QDir g_assetDir;  // base path of asset
+QDir g_dataDir;   // base path for user data
+QDir g_appDir;    // base path for app data
+
+QDir g_usrResDir; // directory for user resources
+QDir g_appResDir; // directory for app resources
 
 QFile*            g_favoritesFile         = nullptr;
 GPXListModel*     g_GPXListModel          = nullptr;
@@ -125,12 +131,6 @@ void importStaticPlugins(QQmlEngine* engine)
   (void)engine;
   //{ myPlugin e; e.initializeEngine(engine, "pluginName"); e.registerTypes("pluginName"); }
 }
-#endif
-
-#ifdef Q_OS_ANDROID
-#include <QtAndroid>
-#include <QAndroidService>
-#include <QAndroidJniObject>
 #endif
 
 int main(int argc, char *argv[])
@@ -167,26 +167,26 @@ int startService(int argc, char* argv[])
 
 #ifdef Q_OS_ANDROID
   QAndroidService app(argc, argv);
+  // retrieve the data directory for the 'service' instance
+  // PlatformExtras::getDataDir() cannot be used here, because this is not 'activity' instance
   QAndroidJniObject service = QtAndroid::androidService();
   QAndroidJniObject nullstr = QAndroidJniObject::fromString("");
   QAndroidJniObject file = service.callObjectMethod("getExternalFilesDir", "(Ljava/lang/String;)Ljava/io/File;", nullstr.object<jstring>());
   QAndroidJniObject path = file.callObjectMethod("getAbsolutePath", "()Ljava/lang/String;");
-  g_homeDir = QDir(path.toString());
-  if (!g_homeDir.mkpath(DIR_RES))
-    return EXIT_FAILURE;
+  g_dataDir = QDir(path.toString());
 #else
   QCoreApplication app(argc, argv);
-  g_homeDir = QDir(QStandardPaths::writableLocation(QStandardPaths::HomeLocation));
-  /* ~/osmin/resources */
-  if (!g_homeDir.mkpath(QString(APP_NAME).append("/").append(DIR_RES)))
+  g_dataDir = QDir(PlatformExtras::getDataDir());
+  // create the base
+  if (!g_dataDir.mkpath(QString(APP_NAME)))
     return EXIT_FAILURE;
-  g_homeDir.cd(APP_NAME);
+  g_dataDir.cd(APP_NAME);
 #endif
-  g_resDir = QDir(g_homeDir.absoluteFilePath(DIR_RES));
-  if (!g_homeDir.mkpath(RES_GPX_DIR))
+  // create path for GPX files, and tracker data
+  if (!g_dataDir.mkpath(DIR_GPX))
     return EXIT_FAILURE;
 
-  Service * svc = new Service(SERVICE_URL, g_homeDir.absoluteFilePath(RES_GPX_DIR));
+  Service * svc = new Service(SERVICE_URL, g_dataDir.absoluteFilePath(DIR_GPX));
   QTimer::singleShot(0, svc, &Service::run);
   ret = app.exec();
 
@@ -208,31 +208,60 @@ int startGUI(int argc, char* argv[])
   QGuiApplication::setApplicationDisplayName(APP_DISPLAY_NAME);
   QGuiApplication::setOrganizationName(ORG_NAME);
   QGuiApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
-
   QGuiApplication app(argc, argv);
   setupApp(app);
 
-  // check for the resource directory
-  g_dataDir = QDir(PlatformExtras::getDataDir(APP_ID));
-  if (!g_dataDir.cd(DIR_RES))
+  // check installed asset
+  g_assetDir = QDir(PlatformExtras::getAssetDir(APP_ID));
+  if (!g_assetDir.cd(DIR_RES) || !g_assetDir.exists())
+  {
+    qWarning("FATAL: Asset directory cannot be found: %s", g_assetDir.absolutePath().toUtf8().constData());
     return EXIT_FAILURE;
-  g_homeDir = QDir(PlatformExtras::getHomeDir());
+  }
+  g_appDir = QDir(PlatformExtras::getAppDir());
+  g_dataDir = QDir(PlatformExtras::getDataDir());
+
 #ifdef Q_OS_ANDROID
+  // request permissions for fine location
   {
     QStringList androidPermissions;
+    androidPermissions.append("android.permission.ACCESS_COARSE_LOCATION");
     androidPermissions.append("android.permission.ACCESS_FINE_LOCATION");
     QtAndroid::requestPermissionsSync(androidPermissions);
   }
-  if (!g_homeDir.mkpath(DIR_RES))
+
+  // create path for app resources
+  if (!g_appDir.mkpath(DIR_RES))
     return EXIT_FAILURE;
+  g_appResDir = g_appDir;
+  g_appResDir.cd(DIR_RES);
+  // create path for user resources
+  if (!g_dataDir.mkpath(DIR_RES))
+    return EXIT_FAILURE;
+  g_usrResDir = g_dataDir;
+  g_usrResDir.cd(DIR_RES);
 #else
-  /* ~/osmin/resources */
-  if (!g_homeDir.mkpath(QString(APP_NAME).append("/").append(DIR_RES)))
+  // create base path for app data
+  if (!g_appDir.mkpath(QString(APP_NAME)))
     return EXIT_FAILURE;
-  g_homeDir.cd(APP_NAME);
+  g_appDir.cd(APP_NAME);
+  // create path for app resources
+  if (!g_appDir.mkpath(DIR_RES))
+    return EXIT_FAILURE;
+  g_appResDir = g_appDir;
+  g_appResDir.cd(DIR_RES);
+  // create base path for user data
+  if (!g_dataDir.mkpath(QString(APP_NAME)))
+    return EXIT_FAILURE;
+  g_dataDir.cd(APP_NAME);
+  // create path for user resources
+  if (!g_dataDir.mkpath(DIR_RES))
+    return EXIT_FAILURE;
+  g_usrResDir = g_dataDir;
+  g_usrResDir.cd(DIR_RES);
 #endif
-  g_resDir = QDir(g_homeDir.absoluteFilePath(DIR_RES));
-  if (!g_homeDir.mkpath(RES_GPX_DIR))
+  // create path for GPX files
+  if (!g_dataDir.mkpath(DIR_GPX))
     return EXIT_FAILURE;
 
   // fork the service process
@@ -260,52 +289,77 @@ int startGUI(int argc, char* argv[])
   g_remoteTracker = new RemoteTracker();
   g_remoteTracker->connectToService(serviceFrontend);
 
-  // check assets
-  QFile resVersion(g_resDir.absoluteFilePath("version"));
-  if (resVersion.exists())
+  // initialize app resources
+  QString oldVersionPath = g_appResDir.absoluteFilePath("version");
+  // migration ? override version file if one exists in data
+  if (g_usrResDir.exists("version"))
+    oldVersionPath = g_usrResDir.absoluteFilePath("version");
+  QFile oldVersion(oldVersionPath);
+  if (oldVersion.exists())
   {
     qInfo("Checking installed assets...");
     QByteArray _version;
-    if (resVersion.open(QIODevice::ReadOnly | QIODevice::Text))
+    if (oldVersion.open(QIODevice::ReadOnly | QIODevice::Text))
     {
-      _version = resVersion.readLine(64);
-      resVersion.close();
+      _version = oldVersion.readLine(64);
+      oldVersion.close();
     }
     qInfo("Found assets version %s", _version.constData());
     if (strlen(APP_VERSION) != _version.length() || ::strncmp(APP_VERSION, _version.constData(), _version.length()) != 0)
     {
-      QFile::remove(resVersion.fileName());
+      // launch the migration
+      migration(QString::fromUtf8(_version), g_appDir.absolutePath(), g_dataDir.absolutePath());
+      oldVersion.remove();
       qWarning("Assets will be upgraded to version %s", APP_VERSION);
     }
   }
+  QFile resVersion(g_appResDir.absoluteFilePath("version"));
   if (!resVersion.exists())
   {
     QStringList folders;
     folders.push_back("");
-    folders.push_back("icons");
-    folders.push_back("stylesheets");
-    folders.push_back("world");
-    for (QString& folder : folders)
+    while (!folders.empty())
     {
-      if (folder.length() == 0 || g_resDir.exists(folder) || g_resDir.mkpath(folder))
+      QString folder = folders.front();
+      folders.pop_front();
+      if (folder.isEmpty() || g_appResDir.exists(folder) || g_appResDir.mkpath(folder))
       {
-        QDir assets(g_dataDir.absoluteFilePath(folder));
+        QDir assets;
+        if (folder.isEmpty())
+          assets.setPath(g_assetDir.absolutePath());
+        else
+          assets.setPath(g_assetDir.absoluteFilePath(folder));
         for (QFileInfo& asset : assets.entryInfoList())
         {
-          if (asset.isFile())
+          if (asset.isSymLink() || asset.isHidden())
+            continue;
+          else if (asset.isFile())
           {
-            QString filename = g_resDir.absoluteFilePath(folder).append('/').append(asset.fileName());
-            if ((!QFile::exists(filename) || QFile::remove(filename)) &&
-                QFile::copy(asset.absoluteFilePath(), filename))
+            QString filepath;
+            if (folder.isEmpty())
+              filepath = g_appResDir.absolutePath().append('/').append(basename(asset.filePath()));
+            else
+              filepath = g_appResDir.absolutePath().append('/').append(folder).append('/').append(basename(asset.filePath()));
+            if ((!QFile::exists(filepath) || QFile::remove(filepath)) &&
+                QFile::copy(asset.absoluteFilePath(), filepath))
               continue;
-            qWarning("Failed to install file %s", asset.fileName().toUtf8().constData());
+            qWarning("Failed to create file %s", filepath.toUtf8().constData());
             return EXIT_FAILURE;
+          }
+          else if (asset.isDir())
+          {
+            QString path;
+            if (folder.isEmpty())
+              folders.push_back(path.append(basename(asset.filePath())));
+            else
+              folders.push_back(path.append(folder).append('/').append(basename(asset.filePath())));
+            continue;
           }
         }
       }
       else
       {
-        qWarning("Failed to create path %s", g_resDir.absoluteFilePath(folder).toUtf8().constData());
+        qWarning("Failed to create directory %s/%s", g_appResDir.absolutePath().toUtf8().constData(), folder.toUtf8().constData());
         return EXIT_FAILURE;
       }
     }
@@ -317,19 +371,27 @@ int startGUI(int argc, char* argv[])
     }
     resVersion.close();
   }
-  qInfo("Resource directory is %s", g_resDir.path().toUtf8().constData());
-  g_favoritesFile = new QFile(g_resDir.absoluteFilePath(RES_FAVORITES_FILE), &app);
-  g_hillshadeProvider = new QString("{}");
-  // create the hillshade server file from sample if needed
-  //if (!g_resDir.exists(RES_HILLSHADE_SERVER_FILE) && g_resDir.exists(RES_HILLSHADE_FILE_SAMPLE))
-  //{
-  //  qInfo("Create hillshade tile server file '%s' from sample", g_resDir.absoluteFilePath(RES_HILLSHADE_SERVER_FILE).toUtf8().constData());
-  //  QFile::copy(g_resDir.absoluteFilePath(RES_HILLSHADE_FILE_SAMPLE), g_resDir.absoluteFilePath(RES_HILLSHADE_SERVER_FILE));
-  //}
-  // load hillshade server file
-  if (g_resDir.exists(RES_HILLSHADE_SERVER_FILE))
+  qInfo("Resource directory is %s", g_appResDir.path().toUtf8().constData());
+
+  // initialize user resources
+  if (!g_usrResDir.exists(RES_MAP_PROVIDERS))
+    QFile::copy(g_appResDir.absoluteFilePath(RES_MAP_PROVIDERS), g_usrResDir.absoluteFilePath(RES_MAP_PROVIDERS));
+  if (!g_usrResDir.exists(RES_VOICE_PROVIDERS))
+    QFile::copy(g_appResDir.absoluteFilePath(RES_VOICE_PROVIDERS), g_usrResDir.absoluteFilePath(RES_VOICE_PROVIDERS));
+  if (!g_usrResDir.exists(RES_TILE_PROVIDERS))
+    QFile::copy(g_appResDir.absoluteFilePath(RES_TILE_PROVIDERS), g_usrResDir.absoluteFilePath(RES_TILE_PROVIDERS));
+  // create the sample hillshade server file from resources as needed
+  if (!g_usrResDir.exists(RES_HILLSHADE_SERVER_FILE) && !g_usrResDir.exists(RES_HILLSHADE_FILE_SAMPLE)
+      && g_appResDir.exists(RES_HILLSHADE_FILE_SAMPLE))
   {
-    QFile file(g_resDir.absoluteFilePath(RES_HILLSHADE_SERVER_FILE));
+    qInfo("Create sample file for hillshade tile server '%s'", g_usrResDir.absoluteFilePath(RES_HILLSHADE_FILE_SAMPLE).toUtf8().constData());
+    QFile::copy(g_appResDir.absoluteFilePath(RES_HILLSHADE_FILE_SAMPLE), g_usrResDir.absoluteFilePath(RES_HILLSHADE_FILE_SAMPLE));
+  }
+  // load hillshade server file
+  g_hillshadeProvider = new QString("{}");
+  if (g_usrResDir.exists(RES_HILLSHADE_SERVER_FILE))
+  {
+    QFile file(g_usrResDir.absoluteFilePath(RES_HILLSHADE_SERVER_FILE));
     if (file.open(QIODevice::ReadOnly | QIODevice::Text))
     {
       qInfo("Found hillshade tile server file '%s'", file.fileName().toUtf8().constData());
@@ -341,77 +403,55 @@ int startGUI(int argc, char* argv[])
     }
   }
 
+  g_favoritesFile = new QFile(g_usrResDir.absoluteFilePath(RES_FAVORITES_FILE), &app);
   g_GPXListModel = new GPXListModel(&app);
-  g_GPXListModel->init(g_homeDir.absoluteFilePath(RES_GPX_DIR));
+  g_GPXListModel->init(g_dataDir.absoluteFilePath(DIR_GPX));
 
-  if (!g_homeDir.exists(DIR_VOICES))
-    g_homeDir.mkdir(DIR_VOICES);
-
-  // initialize the map directories
-  QStringList mapDirs;
-  QStringList storages;
-
-#ifdef Q_OS_ANDROID
-  storages.append(PlatformExtras::getStorageDirs());
-  for (QString& storage : storages)
+  // initialize directories for database
+  if (!g_appDir.mkpath(DIR_VOICES))
   {
-    QDir dir(storage);
-    if (!dir.exists(DIR_MAPS) && !dir.mkdir(DIR_MAPS))
-      qWarning("Failed to create maps storage at %s", dir.absoluteFilePath(DIR_MAPS).toUtf8().constData());
-    else
-    {
-      mapDirs.push_back(dir.absoluteFilePath(DIR_MAPS));
-      if (mapDirs.length() > 1) // no more 2 (internal + external sdcard)
-        break;
-    }
-  }
-#else
-  storages.push_back(PlatformExtras::getHomeDir());
-  for (QString& storage : storages)
-  {
-    QDir dir(storage);
-    if (!dir.exists(DIR_MAPS) && !dir.mkdir(DIR_MAPS))
-      qWarning("Failed to create maps storage at %s", dir.absoluteFilePath(DIR_MAPS).toUtf8().constData());
-    else
-    {
-      mapDirs.push_back(dir.absoluteFilePath(DIR_MAPS));
-      break;
-    }
-  }
-#endif
-
-  if (mapDirs.length() == 0)
-  {
-    qWarning("No available storage for maps");
+    qWarning("Failed to create directory %s/%s", g_appDir.absolutePath().toUtf8().constData(), DIR_VOICES);
     return EXIT_FAILURE;
   }
-
+  if (!g_appDir.mkpath(DIR_MAPS))
+  {
+    qWarning("Failed to create directory %s/%s", g_appDir.absolutePath().toUtf8().constData(), DIR_MAPS);
+    return EXIT_FAILURE;
+  }
+  QStringList mapDirs;
+  mapDirs.push_back(g_appDir.absoluteFilePath(DIR_MAPS));
 
   // register OSMScout library QML types
   osmscout::OSMScoutQt::RegisterQmlTypes(OSMIN_MODULE, 1, 0);
 
   {
     osmscout::OSMScoutQtBuilder builder = osmscout::OSMScoutQt::NewInstance()
-         .WithUserAgent(OSMIN_MODULE, APP_VERSION)
-         .WithBasemapLookupDirectory(g_resDir.absoluteFilePath("world"))
-         .WithStyleSheetDirectory(g_resDir.absoluteFilePath("stylesheets"))
-         .WithIconDirectory(g_resDir.absoluteFilePath("icons"))
-         .WithMapLookupDirectories(mapDirs)
-         .WithOnlineTileProviders(g_resDir.absoluteFilePath("online-tile-providers.json"))
-         .WithMapProviders(g_resDir.absoluteFilePath("map-providers.json"))
-         .WithVoiceLookupDirectory(g_homeDir.absoluteFilePath(DIR_VOICES))
-         .WithVoiceProviders(g_resDir.absoluteFilePath("voice-providers.json"))
-         .WithCacheLocation(QStandardPaths::writableLocation(QStandardPaths::CacheLocation).append("/tiles"))
-         .WithTileCacheSizes(60, 200);
+        .WithUserAgent(OSMIN_MODULE, APP_VERSION)
+        .WithBasemapLookupDirectory(g_appResDir.absoluteFilePath("world"))
+        .WithStyleSheetDirectory(g_appResDir.absoluteFilePath("stylesheets"))
+        .WithIconDirectory(g_appResDir.absoluteFilePath("icons"))
+        .WithMapLookupDirectories(mapDirs)
+        .WithVoiceLookupDirectory(g_appDir.absoluteFilePath(DIR_VOICES))
+        .AddOnlineTileProviders(g_usrResDir.absoluteFilePath("online-tile-providers.json"))
+        .AddMapProviders(g_usrResDir.absoluteFilePath("map-providers.json"))
+        .AddVoiceProviders(g_usrResDir.absoluteFilePath("voice-providers.json"))
+        .WithCacheLocation(QStandardPaths::writableLocation(QStandardPaths::CacheLocation).append("/tiles"))
+        .WithTileCacheSizes(60, 200);
 
+    // declare required types for tracks
     for (const QString& customType : GPXFileModel::customTypeSet())
       builder.AddCustomPoiType(customType);
+    // declare required type for favorite poi
+    builder.AddCustomPoiType("_waypoint_favorite");
 
     if (!builder.Init())
     {
         qWarning("Failed to initialize osmscout");
         return EXIT_FAILURE;
     }
+
+    osmscout::log.Info(false);
+    osmscout::log.Warn(false);
   }
 
   qmlRegisterType<osmscout::QmlSettings>(OSMIN_MODULE, 1, 0, "Settings");
@@ -457,21 +497,22 @@ int startGUI(int argc, char* argv[])
   // bind SCALE_FACTOR
   engine.rootContext()->setContextProperty("ScreenScaleFactor", QVariant(app.primaryScreen()->devicePixelRatio()));
   // bind directories
-  engine.rootContext()->setContextProperty("DataDirectory", g_homeDir.absolutePath());
+  engine.rootContext()->setContextProperty("DataDirectory", g_dataDir.absolutePath());
   engine.rootContext()->setContextProperty("MapsDirectories", mapDirs);
   // bind hillshade provider
   engine.rootContext()->setContextProperty("HillshadeProvider", *g_hillshadeProvider);
   // bind flag Android
 #if defined(Q_OS_ANDROID)
   engine.rootContext()->setContextProperty("Android", QVariant(true));
+  engine.rootContext()->setContextProperty("DeviceMobile", QVariant(true));
 #else
   engine.rootContext()->setContextProperty("Android", QVariant(false));
-#endif
   // bind flag DeviceMobile
 #if defined(DEVICE_MOBILE)
   engine.rootContext()->setContextProperty("DeviceMobile", QVariant(true));
 #else
   engine.rootContext()->setContextProperty("DeviceMobile", QVariant(false));
+#endif
 #endif
   // select and bind styles available and known to work
   QStringList availableStyles;
@@ -648,4 +689,89 @@ QObject* qUtilsInstance(QQmlEngine *engine, QJSEngine *scriptEngine)
   if (utils == nullptr)
     utils = new osmin::Utils();
   return utils;
+}
+
+QString basename(const QString& filepath)
+{
+  int p = filepath.lastIndexOf('/');
+  if (p < 0)
+    return filepath;
+  p += 1;
+  if (p == filepath.length())
+    return basename(filepath.mid(0, p - 1));
+  return filepath.mid(p);
+}
+
+bool migration(const QString& version, const QString& pathapp, const QString& pathdata)
+{
+  qWarning("Running migration");
+  int p1 = version.indexOf('.', 0);
+  if (p1 < 0)
+  {
+    qWarning("... Version string is invalid");
+    return false;
+  }
+  unsigned v = version.left(p1).toInt() << 16;
+  int p2 = version.indexOf('.', ++p1);
+  if (p2 >= 0)
+  {
+    v += version.mid(p1, p2 - p1).toInt() << 8;
+    v += version.mid(++p2).toInt();
+  }
+
+  QDir appDir(pathapp);
+  QDir dataDir(pathdata);
+
+  // from 1.11.0
+  if (v < 0x010b00)
+  {
+#if defined(Q_OS_ANDROID)
+    if (dataDir.exists("Maps"))
+    {
+      qWarning("... Purge directory 'Maps'");
+      QDir _dir = dataDir;
+      _dir.cd("Maps");
+      _dir.removeRecursively();
+      qWarning("... done");
+    }
+    if (dataDir.exists("voices"))
+    {
+      qWarning("... Purge directory 'voices'");
+      QDir _dir = dataDir;
+      _dir.cd("voices");
+      _dir.removeRecursively();
+      qWarning("... done");
+    }
+    if (dataDir.exists("resources"))
+    {
+      QDir resDir = dataDir;
+      resDir.cd("resources");
+      QStringList subs;
+      subs.push_back("icons");
+      subs.push_back("stylesheets");
+      subs.push_back("world");
+      for (const QString& sub : subs)
+      {
+        if (resDir.exists(sub))
+        {
+          qWarning("... Purge directory '%s'", sub.toUtf8().constData());
+          QDir _dir = resDir;
+          _dir.cd(sub);
+          _dir.removeRecursively();
+          qWarning("... done");
+        }
+      }
+    }
+#else
+    QDir _dir = QDir(QStandardPaths::writableLocation(QStandardPaths::HomeLocation));
+    if (!appDir.exists(DIR_MAPS) && _dir.exists("Maps"))
+    {
+      qWarning("... Relocate map databases to %s/%s", APP_NAME, DIR_MAPS);
+      _dir.rename("Maps", QString(APP_NAME).append('/').append(DIR_MAPS));
+      qWarning("... done");
+    }
+#endif
+  }
+
+  return true;
 }

@@ -33,6 +33,7 @@ RemoteTracker::RemoteTracker(QObject *parent) : QObject(parent)
 , m_busy(false)
 , m_recording("")
 , m_isRecording(false)
+, m_magneticDip(0.0)
 { }
 
 osmscout::VehiclePosition *RemoteTracker::getTrackerPosition() const
@@ -41,6 +42,13 @@ osmscout::VehiclePosition *RemoteTracker::getTrackerPosition() const
   //if (!m_nextRouteStep.getType().isEmpty())
   //  nextPosition = std::make_shared<osmscout::GeoCoord>(m_nextRouteStep.GetCoord());
   return new osmscout::VehiclePosition(m_vehicle, m_vehicleState, m_vehicleCoord, m_vehicleBearing, nextPosition);
+}
+
+double RemoteTracker::getBearing() const
+{
+  if (m_vehicleBearing.has_value())
+    return m_vehicleBearing->AsRadians();
+  return 0.0;
 }
 
 void RemoteTracker::connectToService(QVariant service)
@@ -83,13 +91,21 @@ void RemoteTracker::connectToService(ServiceFrontendPtr& service)
     connect(m_service.data(), &ServiceFrontend::trackerPositionRecorded, this, &RemoteTracker::trackerPositionRecorded);
     connect(m_service.data(), &ServiceFrontend::trackerPositionMarked, this, &RemoteTracker::trackerPositionMarked);
     connect(m_service.data(), &ServiceFrontend::trackerDataChanged, this, &RemoteTracker::_trackerDataChanged);
+    connect(m_service.data(), &ServiceFrontend::trackerMagneticDipChanged, this, &RemoteTracker::_trackerMagneticDipChanged);
     // operations
     connect(this, &RemoteTracker::reset, m_service.data(), &ServiceFrontend::resetTrackingData);
     connect(this, &RemoteTracker::startRecording, m_service.data(), &ServiceFrontend::startRecording);
     connect(this, &RemoteTracker::stopRecording, m_service.data(), &ServiceFrontend::stopRecording);
     connect(this, &RemoteTracker::pinPosition, m_service.data(), &ServiceFrontend::pinPosition);
     connect(this, &RemoteTracker::markPosition, m_service.data(), &ServiceFrontend::markPosition);
+    connect(this, &RemoteTracker::setMagneticDip, m_service.data(), &ServiceFrontend::setMagneticDip);
   }
+}
+
+void RemoteTracker::_trackerMagneticDipChanged(double magneticDip)
+{
+  m_magneticDip = magneticDip;
+  emit trackerMagneticDipChanged();
 }
 
 void RemoteTracker::_trackerIsRecordingChanged(bool recording)

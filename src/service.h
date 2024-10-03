@@ -27,20 +27,43 @@
 #include "rep_servicemessenger_source.h"
 #include "tracker.h"
 
+/* The name of the service end-point must include the revision of the API */
+#define SERVICE_URL                     "local:osmin59"
+
 #define SETTING_RECORDING_FILENAME      "trackerRecording"
 #define COMPASS_DATARATE          2     // default
 #define COMPASS_MIN_INTERVAL      250   // 250 ms
 #define POSITION_UPDATE_INTERVAL  1000  // 1 sec
 
-class BuiltInCompass;
-class BuiltInSensorPlugin;
+QT_BEGIN_NAMESPACE
+class QSensor;
 class QSensorBackend;
+QT_END_NAMESPACE
+
+class BuiltInSensorPlugin;
 
 class Service : public ServiceMessengerSource
 {
   Q_OBJECT
 public:
+  /**
+   * @brief Create Service with builtin data source
+   * @param url
+   * @param rootDir
+   */
   Service(const QString& url, const QString& rootDir);
+
+  /**
+   * @brief Create Service using the given data source
+   * @param url
+   * @param rootDir
+   * @param compassSource
+   * @param positionSource
+   */
+  Service(const QString& url, const QString& rootDir
+          , QSensor * compassSource
+          , QGeoPositionInfoSource * positionSource);
+
   virtual ~Service();
 
   enum PositioningMethods
@@ -73,6 +96,7 @@ public slots:
   void tracker_pinPosition() override;
   void tracker_markPosition(const QString& symbol, const QString& name, const QString& description) override;
   void tracker_resetData() override;
+  void tracker_setMagneticDip(double magneticDip) override;
 
 private slots:
   void onCompassReadingChanged();
@@ -90,17 +114,16 @@ private slots:
   void onTrackerPositionChanged();
   void onTrackerRecordingFailed();
   void onTrackerDataChanged();
+  void onTrackerMagneticDipChanged();
 
 private:
   QAtomicInt m_run;
   QString m_url;
   QString m_rootDir;
   QSettings m_settings;
-  BuiltInCompass * m_compass;
-  BuiltInSensorPlugin * m_sensor;
-  QSensorBackend * m_SB;
-
-  QGeoPositionInfoSource * m_position;
+  QSensor * m_compass = nullptr;
+  BuiltInSensorPlugin * m_sensor = nullptr;
+  QGeoPositionInfoSource * m_position = nullptr;
   bool m_positionActive = false;
 
   QRemoteObjectHost * m_node = nullptr;

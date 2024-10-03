@@ -63,6 +63,7 @@ ApplicationWindow {
 
         // Extra settings
         property string styleFlags: "[]"
+        property bool showFavorites: true
     }
 
     Material.accent: Material.Grey
@@ -124,6 +125,9 @@ ApplicationWindow {
     // Constants
     readonly property int queueBatchSize: 100
     readonly property real minSizeGU: 44
+
+    // show/hide favorite POIs
+    property bool showFavorites: false
 
     minimumHeight: units.gu(minSizeGU)
     minimumWidth: units.gu(minSizeGU)
@@ -215,7 +219,7 @@ ApplicationWindow {
             Label {
                 id: titleLabel
                 text: stackView.currentItem != null ? stackView.currentItem.pageTitle : ""
-                font.pointSize: units.fs("large")
+                font.pixelSize: units.fs("large")
                 elide: Label.ElideRight
                 horizontalAlignment: Qt.AlignHCenter
                 verticalAlignment: Qt.AlignVCenter
@@ -258,7 +262,7 @@ ApplicationWindow {
 
                         MenuItem {
                             text: qsTr("About")
-                            font.pointSize: units.fs("medium")
+                            font.pixelSize: units.fs("medium")
                             onTriggered: dialogAbout.open()
                         }
                     }
@@ -271,7 +275,7 @@ ApplicationWindow {
             anchors.fill: parent
             backgroundRadius: 0
             edgeMargins: 0
-            font.pointSize: units.fs("medium");
+            font.pixelSize: units.fs("medium");
             backgroundColor: styleMap.view.backgroundColor
             foregroundColor: styleMap.view.foregroundColor
         }
@@ -323,6 +327,9 @@ ApplicationWindow {
         Osmin.Converter.southwest = qsTr("southwest");
         Osmin.Converter.southeast = qsTr("southeast");
         Osmin.Converter.system = settings.systemOfUnits;
+        Osmin.Tracker.magneticDip = settings.magneticDip;
+
+        showFavorites = settings.showFavorites;
         positionSource.active = true;
         launcher.start();
     }
@@ -361,7 +368,7 @@ ApplicationWindow {
     }
 
     // On android catch the signal 'closing'
-    onClosing: {
+    onClosing: function(close) {
         if (Android) {
             close.accepted = false;
             if (stackView.depth > 1) {
@@ -396,21 +403,17 @@ ApplicationWindow {
     //// Global requests
     ////
 
-    // Add a new favorite
+    // Add a new favorite and return its id
     function createFavorite(lat, lon, label, type) {
-        var index = Osmin.FavoritesModel.append();
-        var id = Osmin.FavoritesModel.data(index, Osmin.FavoritesModel.IdRole)
-        Osmin.FavoritesModel.setData(index, lat, Osmin.FavoritesModel.LatRole);
-        Osmin.FavoritesModel.setData(index, lon, Osmin.FavoritesModel.LonRole);
-        Osmin.FavoritesModel.setData(index, 0.0, Osmin.FavoritesModel.AltRole);
-        Osmin.FavoritesModel.setData(index, new Date(), Osmin.FavoritesModel.TimestampRole);
-        Osmin.FavoritesModel.setData(index, label, Osmin.FavoritesModel.LabelRole);
-        if (type) // optional
-             Osmin.FavoritesModel.setData(index, type, Osmin.FavoritesModel.TypeRole);
-        if (Osmin.FavoritesModel.storeData())
-            return id;
+        var id = Osmin.FavoritesModel.append(lat, lon, label, type);
+        if (id > 0) {
+            if (Osmin.FavoritesModel.storeData())
+                return id;
+            Osmin.FavoritesModel.remove(id); // rollback
+        } else {
+            console.log("Failed to append new favorite: count " + Osmin.FavoritesModel.count + " item(s)");
+        }
         mainInfo.open(qsTr("Saving change failed"));
-        Osmin.FavoritesModel.remove(id);
         return 0;
     }
 
@@ -467,23 +470,6 @@ ApplicationWindow {
 
     MapPosition {
       id: positionSource
-    }
-
-    CompassSensor {
-        id: compass
-        active: false
-        magneticDip: settings.magneticDip
-        signal polled(real azimuth, real rotation)
-        onAzimuthChanged: {
-            if (!poll.running) poll.start();
-        }
-        Timer {
-            id: poll
-            interval: 500
-            onTriggered: {
-                compass.polled(compass.azimuth, (360 - compass.azimuth) * Math.PI / 180.0);
-            }
-        }
     }
 
     MapVoice {

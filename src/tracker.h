@@ -27,7 +27,6 @@
 #include <QObject>
 #include <QDateTime>
 #include <QThread>
-#include <QTimer>
 #include <QSharedPointer>
 #include <QDir>
 #include <QFile>
@@ -49,9 +48,11 @@ class Tracker : public QObject
   Q_PROPERTY(double maxSpeed READ getMaxSpeed NOTIFY trackerDataChanged)
   Q_PROPERTY(double lat READ getLat NOTIFY trackerPositionChanged)
   Q_PROPERTY(double lon READ getLon NOTIFY trackerPositionChanged)
+  Q_PROPERTY(double bearing READ getBearing NOTIFY trackerPositionChanged)
   Q_PROPERTY(QString recording READ getRecording WRITE setRecording NOTIFY trackerRecordingChanged)
   Q_PROPERTY(bool processing READ getProcessing NOTIFY trackerProcessingChanged)
   Q_PROPERTY(bool isRecording READ getIsRecording NOTIFY trackerRecordingChanged)
+  Q_PROPERTY(double magneticDip READ getMagneticDip WRITE setMagneticDip NOTIFY trackerMagneticDipChanged)
   //Q_PROPERTY(double remainingDistance READ getRemainingDistance NOTIFY remainingDistanceChanged)
   //Q_PROPERTY(QObject* nextRouteStep READ getNextRoutStep NOTIFY nextStepChanged)
 
@@ -63,7 +64,7 @@ public:
   bool init(const QString& root);
 
   osmscout::VehiclePosition* getTrackerPosition() const;
-
+  double getBearing() const;
   double getElevation() const { return m_elevation; }
   double getCurrentSpeed() const { return m_currentSpeed; }
   double getDistance() const { return m_distance; }
@@ -77,6 +78,8 @@ public:
   void setRecording(const QString& filename);
   bool getProcessing() const { return m_busy; }
   bool getIsRecording() const;
+  double getMagneticDip() const;
+  void setMagneticDip(double magneticDip);
 
   Q_INVOKABLE void locationChanged(bool positionValid, double lat, double lon,
                                    bool horizontalAccuracyValid, double horizontalAccuracy,
@@ -98,6 +101,7 @@ signals:
   void trackerPositionRecorded(double lat, double lon);
   void trackerPositionMarked(double lat, double lon, const QString& symbol, const QString& name);
   void recordingFailed();
+  void trackerMagneticDipChanged();
   //void remainingDistanceChanged();
   //void nextStepChanged();
 
@@ -134,7 +138,7 @@ private:
   double m_ascent;
   double m_descent;
   double m_maxSpeed;
-  bool m_busy;
+  volatile bool m_busy;
   QString m_recording;
   //std::vector<osmscout::RouteStep> m_routeSteps;
   //osmscout::RouteStep m_nextRouteStep;
@@ -147,6 +151,9 @@ class TrackerModule : public QObject
 public:
   TrackerModule(QThread* thread, const QString& root);
   virtual ~TrackerModule();
+
+  double magneticDip() const { return m_magneticDip; }
+  void setMagneticDip(double magneticDip);
 
   void record();
   bool isRecording() const { return m_recording; }
@@ -166,7 +173,6 @@ signals:
   void positionMarked(const osmscout::GeoCoord coord, const QString& symbol, const QString& name);
 
 public slots:
-  void onTimeout();
   void onLocationChanged(bool positionValid, double lat, double lon, double alt);
   void onAzimuthChanged(double degrees);
   void onReset();
@@ -180,9 +186,10 @@ public slots:
 private:
   QThread* m_t;
   QDir m_baseDir;
-  QTimer m_timer;
   osmscout::PositionAgent::PositionState m_state;
+  double m_magneticDip;
   double m_azimuth;
+  double m_currentAlt;
   double m_currentSpeed;
   double m_maxSpeed;
   struct position_t
@@ -191,6 +198,7 @@ private:
     osmscout::GeoCoord coord;
     osmscout::Bearing bearing;
     double elevation;
+    double speed;
     inline operator bool() const { return time.time_since_epoch() != osmscout::Timestamp::duration::zero(); }
   };
   position_t m_lastPosition;
@@ -204,10 +212,11 @@ private:
 
   double m_distance;
   double m_duration;
+  double m_originAlt;
   double m_ascent;
   double m_descent;
 
-  bool m_recording;
+  volatile bool m_recording;
   QList<osmscout::gpx::TrackPoint> m_segment;
   QMutex m_lock;
   QSharedPointer<QFile> m_file;

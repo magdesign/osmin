@@ -49,24 +49,10 @@
 #include <qmath.h>
 
 #define RADIANS_TO_DEGREES 57.2957795
+#define AVG_THRESHOLD 10.0
+#define AVG_BASECOUNT 9
 
 char const * const GenericCompass::id("builtin.compass");
-
-quint64 produceTimestamp()
-{
-    struct timespec tv;
-    int ok;
-
-#ifdef CLOCK_MONOTONIC_RAW
-    ok = clock_gettime(CLOCK_MONOTONIC_RAW, &tv);
-    if (ok != 0)
-#endif
-    ok = clock_gettime(CLOCK_MONOTONIC, &tv);
-    Q_ASSERT(ok == 0);
-
-    quint64 result = (tv.tv_sec * 1000000ULL) + (tv.tv_nsec * 0.001); // scale to microseconds
-    return result;
-}
 
 GenericCompass::GenericCompass(QSensor *sensor)
     : QSensorBackend(sensor),
@@ -144,10 +130,29 @@ void GenericCompass::checkValues()
             _fusedOrientation[0] = _orientation[0];
         }
         qreal newAzimuth = _fusedOrientation[0] * RADIANS_TO_DEGREES;
-        if (_compassReading.azimuth() != newAzimuth) { // TODO: run thru collection of QCompassFilter
-            _compassReading.setAzimuth(newAzimuth);
-            _compassReading.setTimestamp(produceTimestamp());
-            emit newReadingAvailable();
+
+        qreal gap = newAzimuth - _value;
+        gap += (gap > 180.0 ? -360.0 : gap < -180.0 ? 360.0 : 0);
+        if (std::abs(gap) < AVG_THRESHOLD) {
+          _gaps.push_back(gap);
+          qreal sum = 0.0;
+          for (auto v : _gaps) sum += v;
+          newAzimuth = _value + std::round(sum / _gaps.size());
+          newAzimuth += (newAzimuth < 0 ? 360.0 : newAzimuth >= 360.0 ? -360.0 : 0);
+        } else {
+          _gaps.clear();
+          _gaps.push_back(0);
+          _value = newAzimuth;
+        }
+
+        if (std::abs(newAzimuth - _compassReading.azimuth()) > 1.0) { // TODO: run thru collection of QCompassFilter
+          _compassReading.setAzimuth(newAzimuth);
+          _compassReading.setTimestamp(produceTimestamp());
+          emit newReadingAvailable();
+        }
+
+        if (_gaps.size() > AVG_BASECOUNT) {
+          _gaps.pop_front();
         }
     }
 }
@@ -459,6 +464,22 @@ float * GenericCompass::getOrientation(float *R, size_t lenR, float *values)
         values[2] = (float)qAtan2(-R[8], R[10]);
     }
     return values;
+}
+
+quint64 GenericCompass::produceTimestamp()
+{
+    struct timespec tv;
+    int ok;
+
+#ifdef CLOCK_MONOTONIC_RAW
+    ok = clock_gettime(CLOCK_MONOTONIC_RAW, &tv);
+    if (ok != 0)
+#endif
+    ok = clock_gettime(CLOCK_MONOTONIC, &tv);
+    Q_ASSERT(ok == 0);
+
+    quint64 result = (tv.tv_sec * 1000000ULL) + (tv.tv_nsec * 0.001); // scale to microseconds
+    return result;
 }
 
 void GenericCompass::getRotationVectorFromGyro(float *gyroValues, float *deltaRotationVector, float timeFactor)

@@ -42,6 +42,9 @@
         <file alias="controls2/Banner.qml">controls2_515/Banner.qml</file>
         <file alias="i18n/osmin_en.qm">i18n/osmin_en.qm</file>
         <file alias="i18n/osmin_fr.qm">i18n/osmin_fr.qm</file>
+        <file alias="i18n/osmin_nl.qm">i18n/osmin_nl.qm</file>
+        <file alias="i18n/osmin_de.qm">i18n/osmin_de.qm</file>
+        <file alias="i18n/osmin_es.qm">i18n/osmin_es.qm</file>
         <file alias="controls2/components/MapVoice.qml">controls2_515/components/MapVoice.qml</file>
         <file alias="controls2/ConfigureVoice.qml">controls2_515/ConfigureVoice.qml</file>
         <file alias="controls2/components/OverlayManager.qml">controls2_515/components/OverlayManager.qml</file>
@@ -274,5 +277,6 @@
         <file>images/voice.svg</file>
         <file>images/zoomin.svg</file>
         <file>images/zoomout.svg</file>
+        <file>images/poi/charging_station.svg</file>
     </qresource>
 </RCC>

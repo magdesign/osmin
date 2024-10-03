@@ -92,7 +92,7 @@ MouseArea {
             id: label
             anchors.verticalCenter: parent.verticalCenter
             width: text !== "" && area.visible ? implicitWidth + units.gu(0.5) : 0
-            font.pointSize: units.fs("medium")
+            font.pixelSize: units.fs("medium")
         }
     }
 
@@ -120,13 +120,14 @@ MouseArea {
         radius: height / 2
         color: area.color
         opacity: 0
+        visible: !DeviceMobile
 
         Behavior on opacity {
             NumberAnimation { duration: 100 }
         }
     }
 
-    onEntered: ripple.opacity = 0.1
-    onExited: ripple.opacity = 0
-    onReleased: ripple.opacity = 0
+    onEntered: { if (ripple.visible) ripple.opacity = 0.1; }
+    onExited: { if (ripple.visible) ripple.opacity = 0; }
+    onReleased: { if (ripple.visible) ripple.opacity = 0; }
 }

@@ -59,24 +59,24 @@ QString GPXFile::description() const
   return QString::fromUtf8(m_gpx.desc.value_or("").c_str());
 }
 
-QList<GPXObject*> GPXFile::tracks() const
+QList<GPXObjectTrack> GPXFile::tracks()
 {
   int i = 0;
-  QList<GPXObject*> list;
-  for (const osmscout::gpx::Track& track : m_gpx.tracks)
+  QList<GPXObjectTrack> list;
+  for (osmscout::gpx::Track& track : m_gpx.tracks)
   {
-    list << new GPXObjectTrack(track, ++i);
+    list << GPXObjectTrack(track, ++i);
   }
   return list;
 }
 
-QList<GPXObject*> GPXFile::waypoints() const
+QList<GPXObjectWayPoint> GPXFile::waypoints()
 {
   int i = 0;
-  QList<GPXObject*> list;
-  for (const osmscout::gpx::Waypoint& waypoint : m_gpx.waypoints)
+  QList<GPXObjectWayPoint> list;
+  for (osmscout::gpx::Waypoint& waypoint : m_gpx.waypoints)
   {
-    list << new GPXObjectWayPoint(waypoint, ++i);
+    list << GPXObjectWayPoint(waypoint, ++i);
   }
   return list;
 }
@@ -88,18 +88,18 @@ QString GPXObjectTrack::displayColor() const
   return "";
 }
 
-const QSet<QString>& GPXFileModel::customTypeSet()
+const QStringList GPXFileModel::customTypeSet()
 {
-  static QSet<QString> _type;
+  static QStringList _types;
   static bool _init = false;
   if (!_init)
   {
-    _type.insert(OVERLAY_WAY_TRACK_TYPE);
-    _type.insert(OVERLAY_WAY_HIGHLIGHTED_TYPE);
-    _type.insert(OVERLAY_NODE_WAYPOINT_TYPE);
+    _types.push_back(OVERLAY_WAY_TRACK_TYPE);
+    _types.push_back(OVERLAY_WAY_HIGHLIGHTED_TYPE);
+    _types.push_back(OVERLAY_NODE_WAYPOINT_TYPE);
     _init = true;
   }
-  return _type;
+  return _types;
 }
 
 class GPXFileModel::Loader : public QThread
@@ -259,8 +259,10 @@ bool GPXFileModel::loadData()
     if ((ret = (m_file && m_file->isValid())))
     {
       QList<GPXObject*> data;
-      data.append(m_file->tracks());
-      data.append(m_file->waypoints());
+      for (GPXObjectTrack& t : m_file->tracks())
+        data.append(new GPXObjectTrack(t));
+      for (GPXObjectWayPoint& w : m_file->waypoints())
+        data.append(new GPXObjectWayPoint(w));
       beginInsertRows(QModelIndex(), 0, data.count()-1);
       for (GPXObject* item : data)
       {
@@ -330,14 +332,14 @@ QVariantList GPXFileModel::createOverlayObjects(int id /*=-1*/)
 {
   osmin::LockGuard<QRecursiveMutex> g(m_lock);
   QVariantList list;
-  for (const GPXObject* item : m_items)
+  for (const GPXObject* item : qAsConst(m_items))
   {
     if (id >= 0 && item->id() != id)
       continue;
     if (item->type() == GPXObject::Track)
     {
       const GPXObjectTrack* obj = static_cast<const GPXObjectTrack*>(item);
-      for (auto const& segment : obj->m_track.segments)
+      for (auto const& segment : obj->data().segments)
       {
         std::vector<osmscout::Point> points;
         points.reserve(segment.points.size());
@@ -356,7 +358,7 @@ QVariantList GPXFileModel::createOverlayObjects(int id /*=-1*/)
     {
       const GPXObjectWayPoint* obj = static_cast<const GPXObjectWayPoint*>(item);
       osmscout::OverlayNode* node = new osmscout::OverlayNode();
-      node->addPoint(obj->m_waypoint.coord.GetLat(), obj->m_waypoint.coord.GetLon());
+      node->addPoint(obj->data().coord.GetLat(), obj->data().coord.GetLon());
       node->setTypeName(OVERLAY_NODE_WAYPOINT_TYPE);
       node->setName(obj->name());
       QVariant var;

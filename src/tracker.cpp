@@ -28,6 +28,9 @@
 #define COURSE_SPEED    3.0         /* below this speed the direction is determined with sensor */
 #define BASE_DIRECTORY  "TRACKER"
 #define RECORD_INTERVAL 50.0        /* max distance interval between recorded positions */
+#define ASC_THRESHOLD   (10.0)      /* threshold in meter */
+#define DES_THRESHOLD   (-10.0)     /* threshold in meter */
+#define MAX_ACCEL       12.0        /* accel in meter per sec^2 */
 
 #define TAG_TRKPT       "TRKPT"
 #define TAG_WAYPT       "WAYPT"
@@ -96,6 +99,13 @@ osmscout::VehiclePosition* Tracker::getTrackerPosition() const
   return new osmscout::VehiclePosition(m_vehicle, m_vehicleState, m_vehicleCoord, m_vehicleBearing, nextPosition);
 }
 
+double Tracker::getBearing() const
+{
+  if (m_vehicleBearing.has_value())
+    return m_vehicleBearing->AsRadians();
+  return 0.0;
+}
+
 void Tracker::setRecording(const QString& filename)
 {
   emit doResumeRecording(filename);
@@ -104,6 +114,18 @@ void Tracker::setRecording(const QString& filename)
 bool Tracker::getIsRecording() const
 {
   return (m_p ? m_p->isRecording() : false);
+}
+
+double Tracker::getMagneticDip() const
+{
+  return (m_p ? m_p->magneticDip() : 0.0);
+}
+
+void Tracker::setMagneticDip(double magneticDip)
+{
+  if (m_p)
+    m_p->setMagneticDip(magneticDip);
+  emit trackerMagneticDipChanged();
 }
 
 void Tracker::locationChanged(bool positionValid, double lat, double lon,
@@ -206,9 +228,10 @@ void Tracker::onPositionMarked(const osmscout::GeoCoord coord, const QString& sy
 TrackerModule::TrackerModule(QThread* thread, const QString& root)
 : m_t(thread)
 , m_baseDir()
-, m_timer()
 , m_state(osmscout::PositionAgent::PositionState::NoGpsSignal)
-, m_azimuth(0)
+, m_magneticDip(0.0)
+, m_azimuth(0.0)
+, m_currentAlt(0)
 , m_currentSpeed(0)
 , m_maxSpeed(0)
 , m_lastPosition()
@@ -216,6 +239,7 @@ TrackerModule::TrackerModule(QThread* thread, const QString& root)
 , m_lastRecord()
 , m_distance(0)
 , m_duration(0)
+, m_originAlt(0)
 , m_ascent(0)
 , m_descent(0)
 , m_recording(false)
@@ -232,8 +256,6 @@ TrackerModule::TrackerModule(QThread* thread, const QString& root)
   m_baseDir.setPath(rootDir.absoluteFilePath(BASE_DIRECTORY));
   m_segment.reserve(SEGMENT_SIZE);
   m_formater = new osmin::CSVParser(',', '"');
-  m_timer.moveToThread(thread);
-  connect(&m_timer, &QTimer::timeout, this, &TrackerModule::onTimeout);
 }
 
 TrackerModule::~TrackerModule()
@@ -241,11 +263,16 @@ TrackerModule::~TrackerModule()
   onFlushRecording();
   if (m_t)
     m_t->quit();
+  delete m_formater;
   qInfo("%s", __FUNCTION__);
 }
 
-void TrackerModule::onTimeout()
+void TrackerModule::setMagneticDip(double magneticDip)
 {
+  // rollback dip before signal
+  double degrees = ::remainder(m_azimuth - m_magneticDip, 360.0);
+  m_magneticDip = magneticDip;
+  onAzimuthChanged((degrees < 0 ? degrees + 360.0 : degrees));
 }
 
 void TrackerModule::onLocationChanged(bool positionValid, double lat, double lon, double alt)
@@ -255,37 +282,101 @@ void TrackerModule::onLocationChanged(bool positionValid, double lat, double lon
   else
     m_state = osmscout::PositionAgent::PositionState::OffRoute;
 
-  osmscout::Timestamp now = std::chrono::system_clock::now();
-  osmscout::Bearing bearing;
+  position_t now = {
+    std::chrono::system_clock::now(),
+    osmscout::GeoCoord(lat, lon),
+    osmscout::Bearing(),
+    alt,
+    0.0
+  };
 
-  if (m_lastPosition)
+  // compute data for the last interval,
+  // starting with the last known position and up to now
+  if (!m_lastPosition || !positionValid)
   {
-    double d = osmin::Utils::sphericalDistance(m_lastPosition.coord.GetLat(), m_lastPosition.coord.GetLon(), lat, lon);
-    auto sec = std::chrono::duration_cast<std::chrono::duration<double> >(now - m_lastPosition.time);
-    if (sec.count() > 0)
+    // On the first run, initialize the starting data
+    now.bearing = osmscout::Bearing::Degrees(m_azimuth);
+    m_currentAlt = alt; // could be nan
+    m_originAlt = NAN;
+    m_currentSpeed = 0.0;
+  }
+  else
+  {
+    // the duration should be non zero
+    auto duration = std::chrono::duration_cast<std::chrono::duration<double> >(now.time - m_lastPosition.time);
+    if (duration.count() > 0)
     {
-      m_currentSpeed = 3.6 * d / sec.count();
-      // update tracking data when moving
-      if (m_currentSpeed > MOVING_SPEED)
+      // i use accel to validate the new interval: data won't be updated when value is excessive
+      // the vertical accuracy isn't good enough, therefore i estimate the move using horizontal data only
+      double dh = osmin::Utils::sphericalDistance(m_lastPosition.coord.GetLat(), m_lastPosition.coord.GetLon(), lat, lon);
+      double sh = dh / duration.count();
+      double accelh = std::fabs((sh - (m_lastPosition.speed / 3.6)) / duration.count());
+      now.speed = 3.6 * sh;
+
+      if (accelh < MAX_ACCEL)
       {
-        m_distance += d;
-        m_duration += sec.count();
-        double a = alt - m_lastPosition.elevation;
-        if (a > 0)
-          m_ascent += a;
+        // update tracking speed when moving
+        m_currentSpeed = now.speed;
+        if (now.speed > MOVING_SPEED)
+        {
+          m_distance += dh;
+          m_duration += duration.count();
+          if (now.speed > m_maxSpeed)
+            m_maxSpeed = now.speed;
+        }
+
+        // update tracking elevation when moving
+        if (!std::isnan(alt) && !std::isnan(m_lastPosition.elevation))
+        {
+          // hack to validate vertical deviation
+          if (dh > std::fabs(alt - m_lastPosition.elevation))
+          {
+            // update current elevation
+            m_currentAlt = alt;
+
+            // initialize origin as needed
+            if (std::isnan(m_originAlt))
+              m_originAlt = alt;
+            else
+            {
+              // update statistics when threshold is reached compared to origin
+              double dv = alt - m_originAlt;
+              if (dv > ASC_THRESHOLD)
+              {
+                m_originAlt = alt;
+                m_ascent += dv;
+              }
+              else if (dv < DES_THRESHOLD)
+              {
+                m_originAlt = alt;
+                m_descent -= dv;
+              }
+            }
+          }
+        }
+
+        emit dataChanged(m_currentSpeed, m_distance, m_duration, m_ascent, m_descent, m_maxSpeed);
+
+        // when we are stationary the direction is calculated according to the azimuth of the device
+        // otherwise it is estimated according to the progress compared to the previous position
+        if (now.speed < COURSE_SPEED)
+          now.bearing = osmscout::Bearing::Degrees(m_azimuth);
         else
-          m_descent -= a;
-        if (m_currentSpeed > m_maxSpeed)
-          m_maxSpeed = m_currentSpeed;
+          now.bearing = osmscout::Bearing::Radians(osmin::Utils::sphericalBearingFinal(m_lastPosition.coord.GetLat(), m_lastPosition.coord.GetLon(), lat, lon));
       }
-      emit dataChanged(m_currentSpeed, m_distance, m_duration, m_ascent, m_descent, m_maxSpeed);
+      else
+      {
+        // deviation is out of bounds !!!
+        // keep previous direction
+        now.bearing = m_lastPosition.bearing;
+      }
     }
-    // when we are stationary the direction is calculated according to the azimuth of the device
-    // otherwise it is estimated according to the progress compared to the previous position
-    if (m_currentSpeed < COURSE_SPEED)
-      bearing = osmscout::Bearing::Degrees(m_azimuth);
     else
-      bearing = osmscout::Bearing::Radians(osmin::Utils::sphericalBearingFinal(m_lastPosition.coord.GetLat(), m_lastPosition.coord.GetLon(), lat, lon));
+    {
+      // on zero duration, the deviation is null
+      now.speed = m_lastPosition.speed;
+      now.bearing = m_lastPosition.bearing;
+    }
 
     if (m_recording)
     {
@@ -299,12 +390,12 @@ void TrackerModule::onLocationChanged(bool positionValid, double lat, double lon
       }
       else
       {
-        d = osmin::Utils::sphericalDistance(m_lastRecord.coord.GetLat(), m_lastRecord.coord.GetLon(), lat, lon);
-        double da = std::fabs(bearing.AsRadians() - m_lastRecord.bearing.AsRadians());
+        double dh = osmin::Utils::sphericalDistance(m_lastRecord.coord.GetLat(), m_lastRecord.coord.GetLon(), lat, lon);
+        double da = std::fabs(now.bearing.AsRadians() - m_lastRecord.bearing.AsRadians());
         if (da > M_PI_2)
-          da = fabs(da - M_PI);
+          da = std::fabs(da - M_PI);
         // 0.17rad ~ 20deg
-        if (d >= RECORD_INTERVAL || (da > 0.17 && d > 5.0))
+        if (dh >= RECORD_INTERVAL || (da > 0.17 && dh > 5.0))
         {
           record();
           m_lastRecord.time = m_lastPosition.time;
@@ -315,21 +406,16 @@ void TrackerModule::onLocationChanged(bool positionValid, double lat, double lon
       }
     }
   }
-  else
-  {
-    bearing = osmscout::Bearing::Degrees(m_azimuth);
-  }
 
-  m_lastPosition.bearing = bearing;
-  m_lastPosition.coord.Set(lat, lon);
-  m_lastPosition.elevation = alt;
-  m_lastPosition.time = now;
-  emit positionChanged(m_state, m_lastPosition.coord, std::optional<osmscout::Bearing>(m_lastPosition.bearing));
+  // save last position
+  m_lastPosition = now;
+  emit positionChanged(m_state, now.coord, std::optional<osmscout::Bearing>(now.bearing));
 }
 
 void TrackerModule::onAzimuthChanged(double degrees)
 {
-  m_azimuth = degrees;
+  double angle = ::remainder(degrees + m_magneticDip, 360.0);
+  m_azimuth = (angle < 0 ? angle + 360.0 : angle);
   if (m_currentSpeed < COURSE_SPEED)
   {
     m_lastPosition.bearing = osmscout::Bearing::Degrees(m_azimuth);
@@ -353,7 +439,7 @@ void TrackerModule::onStartRecording()
   if (m_recording)
     onStopRecording();
   // prepare the new file to record data
-  QString recordingName = QDateTime::currentDateTime().toString(Qt::ISODate);
+  QString recordingName = QDateTime::currentDateTime().toString("yyyy_MM_dd_hh_mm_ss");
   // log contains current state of the tracker, and this data will be restored upon recovery
   m_log.reset(new QFile(m_baseDir.absoluteFilePath(QString(recordingName).append(".log"))));
   // main file contains track data
@@ -391,18 +477,18 @@ void TrackerModule::onResumeRecording(const QString& filename)
     // restoring state from log
     for (;;)
     {
-      QList<QByteArray*> row = m_formater->deserialize(m_log->readLine(0x3ff));
-      if (row.length() == 0)
+      osmin::CSVParser::container row;
+      m_formater->deserialize(row, m_log->readLine(0x3ff).toStdString());
+      if (row.size() == 0)
         break;
-      else if (row.length() >= 5)
+      else if (row.size() >= 5)
       {
-        m_distance = QString::fromUtf8(row[0]->constData()).toDouble();
-        m_duration = QString::fromUtf8(row[1]->constData()).toDouble();
-        m_ascent = QString::fromUtf8(row[2]->constData()).toDouble();
-        m_descent = QString::fromUtf8(row[3]->constData()).toDouble();
-        m_maxSpeed = QString::fromUtf8(row[4]->constData()).toDouble();
+        m_distance = QString::fromUtf8(row[0].c_str()).toDouble();
+        m_duration = QString::fromUtf8(row[1].c_str()).toDouble();
+        m_ascent = QString::fromUtf8(row[2].c_str()).toDouble();
+        m_descent = QString::fromUtf8(row[3].c_str()).toDouble();
+        m_maxSpeed = QString::fromUtf8(row[4].c_str()).toDouble();
       }
-      qDeleteAll(row);
     }
     m_log->close();
     m_file->close();
@@ -429,43 +515,49 @@ void TrackerModule::onStopRecording()
   size_t cp = 0, cwp = 0;
   for (;;)
   {
-    QList<QByteArray*> row = m_formater->deserialize(file->readLine(0x3ff));
-    if (row.length() == 0)
+    osmin::CSVParser::container row;
+    bool next = m_formater->deserialize(row, file->readLine(0x3ff).toStdString());
+    // paranoia: on corruption the last field could overflow
+    while (next && !file->atEnd() && row.back().size() < 0x3ff)
+    {
+      // the row continue with next line
+      next = m_formater->deserialize_next(row, file->readLine(0x3ff).toStdString());
+    }
+    if (row.size() == 0)
       break;
-    else if (row.length() >= 6 && *row[0] == TAG_WAYPT)
+    else if (row.size() >= 6 && row[0] == TAG_WAYPT)
     {
       if (++cwp > waypoints.size())
         waypoints.reserve(waypoints.size() + 20);
-      osmscout::Timestamp ts(std::chrono::milliseconds(static_cast<qint64>(std::round(QString::fromUtf8(row[1]->constData()).toDouble() * 1000))));
-      double lat = QString::fromUtf8(row[2]->constData()).toDouble();
-      double lon = QString::fromUtf8(row[3]->constData()).toDouble();
-      double cse = QString::fromUtf8(row[4]->constData()).toDouble();
-      double alt = QString::fromUtf8(row[5]->constData()).toDouble();
+      osmscout::Timestamp ts(std::chrono::milliseconds(static_cast<qint64>(std::round(QString::fromUtf8(row[1].c_str()).toDouble() * 1000))));
+      double lat = QString::fromUtf8(row[2].c_str()).toDouble();
+      double lon = QString::fromUtf8(row[3].c_str()).toDouble();
+      double cse = QString::fromUtf8(row[4].c_str()).toDouble();
+      double alt = QString::fromUtf8(row[5].c_str()).toDouble();
       osmscout::gpx::Waypoint waypoint(osmscout::GeoCoord(lat, lon));
-      waypoint.time = std::optional<osmscout::Timestamp>(ts);
+      waypoint.timestamp = std::optional<osmscout::Timestamp>(ts);
       waypoint.course = std::optional<double>(cse);
       waypoint.elevation = std::optional<double>(alt);
-      waypoint.symbol = std::optional<std::string>(row[6]->constData());
-      waypoint.name = std::optional<std::string>(row[7]->constData());
-      waypoint.description = std::optional<std::string>(row[8]->constData());
+      waypoint.symbol = std::optional<std::string>(row[6].c_str());
+      waypoint.name = std::optional<std::string>(row[7].c_str());
+      waypoint.description = std::optional<std::string>(row[8].c_str());
       waypoints.push_back(waypoint);
     }
-    else if (row.length() >= 6 && *row[0] == TAG_TRKPT)
+    else if (row.size() >= 6 && row[0] == TAG_TRKPT)
     {
       if (++cp > segment.points.size())
         segment.points.reserve(segment.points.size() + 1000);
-      osmscout::Timestamp ts(std::chrono::milliseconds(static_cast<qint64>(std::round(QString::fromUtf8(row[1]->constData()).toDouble() * 1000))));
-      double lat = QString::fromUtf8(row[2]->constData()).toDouble();
-      double lon = QString::fromUtf8(row[3]->constData()).toDouble();
-      double cse = QString::fromUtf8(row[4]->constData()).toDouble();
-      double alt = QString::fromUtf8(row[5]->constData()).toDouble();
+      osmscout::Timestamp ts(std::chrono::milliseconds(static_cast<qint64>(std::round(QString::fromUtf8(row[1].c_str()).toDouble() * 1000))));
+      double lat = QString::fromUtf8(row[2].c_str()).toDouble();
+      double lon = QString::fromUtf8(row[3].c_str()).toDouble();
+      double cse = QString::fromUtf8(row[4].c_str()).toDouble();
+      double alt = QString::fromUtf8(row[5].c_str()).toDouble();
       osmscout::gpx::TrackPoint point(osmscout::GeoCoord(lat, lon));
-      point.time = std::optional<osmscout::Timestamp>(ts);
+      point.timestamp = std::optional<osmscout::Timestamp>(ts);
       point.course = std::optional<double>(cse);
       point.elevation = std::optional<double>(alt);
       segment.points.emplace_back(point);
     }
-    qDeleteAll(row);
   }
   file->close();
   // generate a simple GPX file
@@ -477,24 +569,24 @@ void TrackerModule::onStopRecording()
     osmscout::gpx::GpxFile gpx;
     gpx.tracks.push_back(track);
     gpx.desc = std::optional<std::string>("Generated by Osmin Traker");
-    gpx.time = std::optional<osmscout::Timestamp>(segment.points[0].time.value());
+    gpx.timestamp = std::optional<osmscout::Timestamp>(segment.points[0].timestamp.value());
     osmscout::gpx::Waypoint beg(segment.points[0].coord);
     beg.elevation = std::optional<double>(segment.points[0].elevation.value());
     beg.symbol = std::optional<std::string>("Flag, Red");
-    beg.time = std::optional<osmscout::Timestamp>(segment.points[0].time.value());
+    beg.timestamp = std::optional<osmscout::Timestamp>(segment.points[0].timestamp.value());
     beg.name = std::optional<std::string>("[START]");
     osmscout::gpx::Waypoint end(segment.points[segment.points.size() - 1].coord);
     end.elevation = std::optional<double>(segment.points[segment.points.size() - 1].elevation.value());
     end.symbol = std::optional<std::string>("Flag, Red");
-    end.time = std::optional<osmscout::Timestamp>(segment.points[segment.points.size() - 1].time.value());
+    end.timestamp = std::optional<osmscout::Timestamp>(segment.points[segment.points.size() - 1].timestamp.value());
     end.name = std::optional<std::string>("[END]");
     gpx.waypoints.push_back(beg);
     gpx.waypoints.push_back(end);
     gpx.waypoints.insert(gpx.waypoints.end(), waypoints.begin(), waypoints.end());
     QDateTime fdate = QDateTime();
-    fdate.setMSecsSinceEpoch(std::chrono::duration_cast<std::chrono::milliseconds>(beg.time.value().time_since_epoch()).count());
+    fdate.setMSecsSinceEpoch(std::chrono::duration_cast<std::chrono::milliseconds>(beg.timestamp.value().time_since_epoch()).count());
     gpx.name = std::optional<std::string>(fdate.toString(Qt::ISODate).toUtf8().toStdString());
-    QString fname = fdate.toString(Qt::ISODate).append(".gpx");
+    QString fname = fdate.toString("yyyy_MM_dd_hh_mm_ss").append(".gpx");
     if (!osmscout::gpx::ExportGpx(gpx, m_baseDir.absoluteFilePath(fname).toUtf8().toStdString()))
     {
       emit processing(false);
@@ -523,7 +615,7 @@ void TrackerModule::onMarkPosition(const QString& symbol, const QString& name, c
   if (!m_mark.isNull())
     onFlushRecording();
   osmscout::gpx::Waypoint* waypoint = new osmscout::gpx::Waypoint(pos->coord);
-  waypoint->time = std::optional<osmscout::Timestamp>(pos->time);
+  waypoint->timestamp = std::optional<osmscout::Timestamp>(pos->time);
   waypoint->course = std::optional<double>(pos->bearing.AsDegrees());
   waypoint->elevation = std::optional<double>(pos->elevation);
   waypoint->symbol = std::optional<std::string>(symbol.toUtf8());
@@ -551,20 +643,20 @@ void TrackerModule::onFlushRecording()
     while (!m_segment.empty())
     {
       const auto p = m_segment.front();
-      QList<QByteArray*> row;
+      osmin::CSVParser::container row;
       QString num;
-      auto sec = std::chrono::duration_cast<std::chrono::duration<double> >(p.time.value().time_since_epoch());
-      row << new QByteArray(TAG_TRKPT);
-      row << new QByteArray(num.setNum(sec.count(), 'f', 3).toUtf8());
-      row << new QByteArray(num.setNum(p.coord.GetLat(), 'f', 6).toUtf8());
-      row << new QByteArray(num.setNum(p.coord.GetLon(), 'f', 6).toUtf8());
-      row << new QByteArray(num.setNum(p.course.value(), 'f', 1).toUtf8());
-      row << new QByteArray(num.setNum(p.elevation.value(), 'f', 1).toUtf8());
-      row << new QByteArray("");
-      QByteArray data = m_formater->serialize(row);
-      qDeleteAll(row);
+      auto sec = std::chrono::duration_cast<std::chrono::duration<double> >(p.timestamp.value().time_since_epoch());
+      row.push_back(std::string(TAG_TRKPT));
+      row.push_back(num.setNum(sec.count(), 'f', 3).toStdString());
+      row.push_back(num.setNum(p.coord.GetLat(), 'f', 6).toStdString());
+      row.push_back(num.setNum(p.coord.GetLon(), 'f', 6).toStdString());
+      row.push_back(num.setNum(p.course.value(), 'f', 1).toStdString());
+      row.push_back(num.setNum(p.elevation.value(), 'f', 1).toStdString());
+      row.push_back(std::string(""));
+      std::string data;
+      m_formater->serialize(data, row);
       data.append("\r\n");
-      m_file->write(data);
+      m_file->write(data.c_str());
       m_segment.pop_front();
     }
     // flush mark
@@ -572,23 +664,23 @@ void TrackerModule::onFlushRecording()
     mark.swap(m_mark);
     if (!mark.isNull())
     {
-      QList<QByteArray*> row;
+      osmin::CSVParser::container row;
       QString num;
-      auto sec = std::chrono::duration_cast<std::chrono::duration<double> >(mark->time.value().time_since_epoch());
-      row << new QByteArray(TAG_WAYPT);
-      row << new QByteArray(num.setNum(sec.count(), 'f', 3).toUtf8());
-      row << new QByteArray(num.setNum(mark->coord.GetLat(), 'f', 6).toUtf8());
-      row << new QByteArray(num.setNum(mark->coord.GetLon(), 'f', 6).toUtf8());
-      row << new QByteArray(num.setNum(mark->course.value(), 'f', 1).toUtf8());
-      row << new QByteArray(num.setNum(mark->elevation.value(), 'f', 1).toUtf8());
-      row << new QByteArray(mark->symbol.value_or(MARK_SYMBOL).data());
-      row << new QByteArray(mark->name.value_or("").data());
-      row << new QByteArray(mark->description.value_or("").data());
-      row << new QByteArray("");
-      QByteArray data = m_formater->serialize(row);
-      qDeleteAll(row);
+      auto sec = std::chrono::duration_cast<std::chrono::duration<double> >(mark->timestamp.value().time_since_epoch());
+      row.push_back(std::string(TAG_WAYPT));
+      row.push_back(num.setNum(sec.count(), 'f', 3).toStdString());
+      row.push_back(num.setNum(mark->coord.GetLat(), 'f', 6).toStdString());
+      row.push_back(num.setNum(mark->coord.GetLon(), 'f', 6).toStdString());
+      row.push_back(num.setNum(mark->course.value(), 'f', 1).toStdString());
+      row.push_back(num.setNum(mark->elevation.value(), 'f', 1).toStdString());
+      row.push_back(mark->symbol.value_or(MARK_SYMBOL).data());
+      row.push_back(mark->name.value_or("").data());
+      row.push_back(mark->description.value_or("").data());
+      row.push_back(std::string(""));
+      std::string data;
+      m_formater->serialize(data, row);
       data.append("\r\n");
-      m_file->write(data);
+      m_file->write(data.c_str());
     }
     // all data are flushed
     m_file->close();
@@ -596,18 +688,18 @@ void TrackerModule::onFlushRecording()
   // flush log
   if (m_log->open(QIODevice::Truncate| QIODevice::WriteOnly | QIODevice::Text))
   {
-    QList<QByteArray*> row;
+    osmin::CSVParser::container row;
     QString num;
-    row << new QByteArray(num.setNum(m_distance, 'f', 3).toUtf8());
-    row << new QByteArray(num.setNum(m_duration, 'f', 3).toUtf8());
-    row << new QByteArray(num.setNum(m_ascent, 'f', 3).toUtf8());
-    row << new QByteArray(num.setNum(m_descent, 'f', 3).toUtf8());
-    row << new QByteArray(num.setNum(m_maxSpeed, 'f', 3).toUtf8());
-    row << new QByteArray("");
-    QByteArray data = m_formater->serialize(row);
-    qDeleteAll(row);
+    row.push_back(num.setNum(m_distance, 'f', 3).toStdString());
+    row.push_back(num.setNum(m_duration, 'f', 3).toStdString());
+    row.push_back(num.setNum(m_ascent, 'f', 3).toStdString());
+    row.push_back(num.setNum(m_descent, 'f', 3).toStdString());
+    row.push_back(num.setNum(m_maxSpeed, 'f', 3).toStdString());
+    row.push_back("");
+    std::string data;
+    m_formater->serialize(data, row);
     data.append("\r\n");
-    m_log->write(data);
+    m_log->write(data.c_str());
     // log is flushed
     m_log->close();
   }
@@ -628,26 +720,32 @@ void TrackerModule::onDumpRecording()
     // dump stored data
     for (;;)
     {
-      QList<QByteArray*> row = m_formater->deserialize(file->readLine(0x3ff));
-      if (row.length() == 0)
-        break;
-      else if (row.length() >= 6 && *row[0] == TAG_WAYPT)
+      osmin::CSVParser::container row;
+      bool next = m_formater->deserialize(row, file->readLine(0x3ff).toStdString());
+      // paranoia: on corruption the last field could overflow
+      while (next && !file->atEnd() && row.back().size() < 0x3ff)
       {
-        osmscout::Timestamp ts(std::chrono::milliseconds(static_cast<qint64>(std::round(QString::fromUtf8(row[1]->constData()).toDouble() * 1000))));
-        double lat = QString::fromUtf8(row[2]->constData()).toDouble();
-        double lon = QString::fromUtf8(row[3]->constData()).toDouble();
-        QString symbol(row[6]->constData());
-        QString name(row[7]->constData());
+        // the row continue with next line
+        next = m_formater->deserialize_next(row, file->readLine(0x3ff).toStdString());
+      }
+      if (row.size() == 0)
+        break;
+      else if (row.size() >= 6 && row[0] == TAG_WAYPT)
+      {
+        osmscout::Timestamp ts(std::chrono::milliseconds(static_cast<qint64>(std::round(QString::fromUtf8(row[1].c_str()).toDouble() * 1000))));
+        double lat = QString::fromUtf8(row[2].c_str()).toDouble();
+        double lon = QString::fromUtf8(row[3].c_str()).toDouble();
+        QString symbol(row[6].c_str());
+        QString name(row[7].c_str());
         emit positionMarked(osmscout::GeoCoord(lat, lon), symbol, name);
       }
-      else if (row.length() >= 6 && *row[0] == TAG_TRKPT)
+      else if (row.size() >= 6 && row[0] == TAG_TRKPT)
       {
-        osmscout::Timestamp ts(std::chrono::milliseconds(static_cast<qint64>(std::round(QString::fromUtf8(row[1]->constData()).toDouble() * 1000))));
-        double lat = QString::fromUtf8(row[2]->constData()).toDouble();
-        double lon = QString::fromUtf8(row[3]->constData()).toDouble();
+        osmscout::Timestamp ts(std::chrono::milliseconds(static_cast<qint64>(std::round(QString::fromUtf8(row[1].c_str()).toDouble() * 1000))));
+        double lat = QString::fromUtf8(row[2].c_str()).toDouble();
+        double lon = QString::fromUtf8(row[3].c_str()).toDouble();
         emit positionRecorded(osmscout::GeoCoord(lat, lon));
       }
-      qDeleteAll(row);
     }
     file->close();
   }
@@ -665,7 +763,7 @@ void TrackerModule::record()
   if (m_segment.count() >= SEGMENT_SIZE)
     onFlushRecording();
   osmscout::gpx::TrackPoint point(m_lastPosition.coord);
-  point.time = std::optional<osmscout::Timestamp>(m_lastPosition.time);
+  point.timestamp = std::optional<osmscout::Timestamp>(m_lastPosition.time);
   point.course = std::optional<double>(m_lastPosition.bearing.AsDegrees());
   point.elevation = std::optional<double>(m_lastPosition.elevation);
   m_segment.append(point);

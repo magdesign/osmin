@@ -37,29 +37,31 @@ PopOver {
                 Label {
                     width: parent.width / 2
                     text: qsTr("Average Speed")
-                  font.pointSize: units.fs("large")
-                  color: styleMap.popover.highlightedColor
+                    font.pixelSize: units.fs("medium")
+                    color: styleMap.popover.highlightedColor
                 }
                 Label {
-                    id: avgSpeed
-                    text: Converter.readableSpeed(Tracker.duration < 1 ? 0 : 3.6 * Tracker.distance/Tracker.duration)
-                    font.pointSize: units.fs("large")
-                    color: foregroundColor
+                    width: parent.width / 2
+                    text: qsTr("Maximum Speed")
+                    font.pixelSize: units.fs("medium")
+                    color: styleMap.popover.highlightedColor
                 }
             }
             Row {
                 width: parent.width
                 spacing: units.gu(2)
                 Label {
+                    id: avgSpeed
                     width: parent.width / 2
-                    text: qsTr("Duration")
-                  font.pointSize: units.fs("large")
-                  color: styleMap.popover.highlightedColor
+                    text: Converter.readableSpeed(Tracker.duration < 1 ? 0 : 3.6 * Tracker.distance/Tracker.duration)
+                    font.pixelSize: units.fs("large")
+                    color: foregroundColor
                 }
                 Label {
-                    id: duration
-                    text: Converter.panelDurationHMS(Tracker.duration)
-                    font.pointSize: units.fs("large")
+                    id: maxSpeed
+                    width: parent.width / 2
+                    text: Converter.readableSpeed(Tracker.maxSpeed)
+                    font.pixelSize: units.fs("large")
                     color: foregroundColor
                 }
             }
@@ -69,13 +71,31 @@ PopOver {
                 Label {
                     width: parent.width / 2
                     text: qsTr("Distance")
-                  font.pointSize: units.fs("large")
-                  color: styleMap.popover.highlightedColor
+                    font.pixelSize: units.fs("medium")
+                    color: styleMap.popover.highlightedColor
                 }
                 Label {
+                    width: parent.width / 2
+                    text: qsTr("Duration")
+                    font.pixelSize: units.fs("medium")
+                    color: styleMap.popover.highlightedColor
+                }
+            }
+            Row {
+                width: parent.width
+                spacing: units.gu(2)
+                Label {
                     id: distance
+                    width: parent.width / 2
                     text: Converter.readableDistance(Tracker.distance)
-                    font.pointSize: units.fs("large")
+                    font.pixelSize: units.fs("large")
+                    color: foregroundColor
+                }
+                Label {
+                    id: duration
+                    width: parent.width / 2
+                    text: Converter.panelDurationHMS(Tracker.duration)
+                    font.pixelSize: units.fs("large")
                     color: foregroundColor
                 }
             }
@@ -85,45 +105,31 @@ PopOver {
                 Label {
                     width: parent.width / 2
                     text: qsTr("Ascent")
-                  font.pointSize: units.fs("large")
-                  color: styleMap.popover.highlightedColor
+                    font.pixelSize: units.fs("medium")
+                    color: styleMap.popover.highlightedColor
                 }
-                Label {
-                    id: ascent
-                    text: Converter.readableDistance(Tracker.ascent)
-                    font.pointSize: units.fs("large")
-                    color: foregroundColor
-                }
-            }
-            Row {
-                width: parent.width
-                spacing: units.gu(2)
                 Label {
                     width: parent.width / 2
                     text: qsTr("Descent")
-                  font.pointSize: units.fs("large")
-                  color: styleMap.popover.highlightedColor
-                }
-                Label {
-                    id: descent
-                    text: Converter.readableDistance(Tracker.descent)
-                    font.pointSize: units.fs("large")
-                    color: foregroundColor
+                    font.pixelSize: units.fs("medium")
+                    color: styleMap.popover.highlightedColor
                 }
             }
             Row {
                 width: parent.width
                 spacing: units.gu(2)
                 Label {
+                    id: ascent
                     width: parent.width / 2
-                    text: qsTr("Maximum Speed")
-                  font.pointSize: units.fs("large")
-                  color: styleMap.popover.highlightedColor
+                    text: Converter.readableDistance(Tracker.ascent)
+                    font.pixelSize: units.fs("large")
+                    color: foregroundColor
                 }
                 Label {
-                    id: maxSpeed
-                    text: Converter.readableSpeed(Tracker.maxSpeed)
-                    font.pointSize: units.fs("large")
+                    id: descent
+                    width: parent.width / 2
+                    text: Converter.readableDistance(Tracker.descent)
+                    font.pixelSize: units.fs("large")
                     color: foregroundColor
                 }
             }
@@ -137,7 +143,7 @@ PopOver {
                 height: units.gu(6)
                 label.text: "  " + (Tracker.recording !== "" ? qsTr("Cut track recording") : qsTr("Start track recording"))
                 label.color: foregroundColor
-                label.font.pointSize: units.fs("medium")
+                label.font.pixelSize: units.fs("medium")
                 label.elide: Text.ElideRight
                 label.width: parent.width - units.gu(7)
                 onClicked: {
@@ -157,7 +163,7 @@ PopOver {
                 height: units.gu(6)
                 label.text: "  " + qsTr("Close track recording")
                 label.color: foregroundColor
-                label.font.pointSize: units.fs("medium")
+                label.font.pixelSize: units.fs("medium")
                 label.elide: Text.ElideRight
                 label.width: parent.width - units.gu(7)
                 onClicked: {
@@ -176,7 +182,7 @@ PopOver {
                 height: units.gu(6)
                 label.text: "  " + qsTr("Reset statistics")
                 label.color: foregroundColor
-                label.font.pointSize: units.fs("medium")
+                label.font.pixelSize: units.fs("medium")
                 label.elide: Text.ElideRight
                 label.width: parent.width - units.gu(7)
                 onClicked: {
@@ -184,6 +190,51 @@ PopOver {
                 }
                 enabled: Tracker.recording === ""
                 opacity: enabled ? 1.0 : 0.5
+            }
+        }
+
+        Column {
+            Label {
+                text: qsTr("Coordinates")
+                color: styleMap.popover.highlightedColor
+                font.pixelSize: units.fs("medium")
+            }
+            Label {
+                text: Converter.readableCoordinatesGeocaching(positionSource._lat, positionSource._lon)
+                font.pixelSize: units.fs("large")
+                color: foregroundColor
+            }
+        }
+        Column {
+            Label {
+                text: qsTr("Elevation")
+                color: styleMap.popover.highlightedColor
+                font.pixelSize: units.fs("medium")
+            }
+            Label {
+                text: Converter.readableElevation(positionSource._alt)
+                font.pixelSize: units.fs("large")
+                color: foregroundColor
+            }
+        }
+        Column {
+            Label {
+                text: qsTr("Bearing")
+                color: styleMap.popover.highlightedColor
+                font.pixelSize: units.fs("medium")
+            }
+            Row {
+                spacing: units.gu(1)
+                Label {
+                    text: Converter.readableDegree(180.0 * Tracker.bearing / Math.PI)
+                    font.pixelSize: units.fs("large")
+                    color: foregroundColor
+                }
+                Label {
+                    text: "(" + Converter.readableCardinal(180.0 * Tracker.bearing / Math.PI) + ")"
+                    font.pixelSize: units.fs("large")
+                    color: foregroundColor
+                }
             }
         }
     }

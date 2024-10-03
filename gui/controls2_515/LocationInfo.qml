@@ -56,7 +56,7 @@ PopOver {
 
     LocationInfoModel{
         id: locationInfoModel
-        onReadyChange: {
+        onReadyChange: function(ready) {
             // expose the place info
             if (ready && rowCount() > 0) {
                 var mi = index(0, 0);
@@ -74,19 +74,6 @@ PopOver {
         id: locationInfoBody
         spacing: units.gu(1)
 
-        Label {
-            id: locationDistanceLabel
-            text: locationInfoModel.distance(sourceLat, sourceLon, placeLat, placeLon) < 5 ?
-                      qsTr("You are here") :
-                      qsTr("%1 %2 from you")
-                          .arg(Converter.readableDistance(locationInfoModel.distance(sourceLat, sourceLon, placeLat, placeLon)))
-                          .arg(Converter.readableBearing(locationInfoModel.bearing(sourceLat, sourceLon, placeLat, placeLon)))
-
-            color: styleMap.popover.highlightedColor
-            font.pointSize: units.fs("small")
-            visible: sourceValid
-        }
-
         ListView {
             id: locationInfoView
             width: parent.width
@@ -96,13 +83,26 @@ PopOver {
             model: locationInfoModel
 
             onCountChanged: {
-                var h = (locationDistanceLabel.visible ? locationDistanceLabel.implicitHeight : 0) + locationInfoBody.spacing +
-                        locationInfoView.contentHeight + locationInfoView.spacing * locationInfoView.count;
+                var h = locationInfoView.contentHeight + locationInfoView.spacing;
                 resizeBox(h);
             }
 
             opacity: locationInfoModel.ready ? 1.0 : 0.0
             Behavior on opacity { NumberAnimation {} }
+
+            header: Label {
+                id: locationDistanceLabel
+                text: locationInfoModel.distance(sourceLat, sourceLon, placeLat, placeLon) < 5 ?
+                          qsTr("You are here") :
+                          qsTr("%1 %2 from you")
+                              .arg(Converter.readableDistance(locationInfoModel.distance(sourceLat, sourceLon, placeLat, placeLon)))
+                              .arg(Converter.readableBearing(locationInfoModel.bearing(sourceLat, sourceLon, placeLat, placeLon)))
+
+                color: styleMap.popover.highlightedColor
+                font.pixelSize: units.fs("small")
+                bottomPadding: locationInfoView.spacing
+                visible: sourceValid
+            }
 
             delegate: Column {
                 spacing: 0
@@ -115,7 +115,7 @@ PopOver {
                     text: qsTr("%1 %2 from").arg(Converter.readableDistance(distance)).arg(Converter.readableBearing(bearing))
 
                     color: styleMap.popover.highlightedColor
-                    font.pointSize: units.fs("small")
+                    font.pixelSize: units.fs("small")
                     visible: !inPlace
                 }
                 Row {
@@ -132,7 +132,7 @@ PopOver {
                             width: locationInfoView.width - poiIcon.width - units.gu(1)
                             text: poi // label
                             color: styleMap.popover.foregroundColor
-                            font.pointSize: units.fs("large")
+                            font.pixelSize: units.fs("large")
                             visible: poi != ""
                         }
                         Label {
@@ -140,7 +140,7 @@ PopOver {
                             width: locationInfoView.width - poiIcon.width - units.gu(1)
                             text: address
                             color: styleMap.popover.foregroundColor
-                            font.pointSize: units.fs("medium")
+                            font.pixelSize: units.fs("medium")
                             visible: address != ""
                         }
                         Label {
@@ -164,7 +164,7 @@ PopOver {
                                 }
                             }
                             color: styleMap.popover.foregroundColor
-                            font.pointSize: units.fs("medium")
+                            font.pixelSize: units.fs("medium")
                             visible: region.length > 0 || postalCode != ""
                         }
                         PhoneLink {

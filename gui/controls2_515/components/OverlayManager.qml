@@ -23,89 +23,128 @@ QtObject {
     // the map to handle
     property Map map
 
-    // constants
-    readonly property int id_ROUTE: 0       // the route overlay
-    readonly property int id_RECORDING: 1   // the recording overlay
-    readonly property int id_DEPARTURE: 4   // the departure of route
-    readonly property int id_ARRIVAL: 5     // the arrival of route
-    readonly property int id_MARK_POINT: 8  // range start for marks
-    readonly property int id_WAY_POINT: 128 // range start for way points
-    readonly property int id_COURSE: 256    // range start for courses
+    property QtObject internal: QtObject {
+        property bool showFavorites: false
+    }
 
     // add the route on the map
     function addRoute(routeWay) {
-        map.addOverlayObject(id_ROUTE, routeWay);
+        var ovs = MapExtras.findOverlays("ROUTE", 0);
+        if (ovs.length > 0)
+            map.addOverlayObject(ovs[0], routeWay);
+        else
+            map.addOverlayObject(MapExtras.addOverlay("ROUTE", 0), routeWay);
+        return true;
     }
 
     // remove the route on the map
     function removeRoute() {
-        map.removeOverlayObject(id_ROUTE);
+        var ovs = MapExtras.clearOverlays("ROUTE", 0);
+        ovs.forEach(function(e){ map.removeOverlayObject(e); });
+        MapExtras.releaseOverlayIds(ovs);
+        return true;
     }
 
     // add the START mark on the map
     function addMarkStart(lat, lon) {
-        map.addPositionMark(id_DEPARTURE, lat, lon);
+        var ovs = MapExtras.findOverlays("ROUTE", 1);
+        if (ovs.length > 0)
+            map.addPositionMark(ovs[0], lat, lon);
+        else
+            map.addPositionMark(MapExtras.addOverlay("ROUTE", 1), lat, lon);
+        return true;
     }
 
     // remove the START mark on the map
     function removeMarkStart() {
-        map.removePositionMark(id_DEPARTURE);
+        var ovs = MapExtras.clearOverlays("ROUTE", 1);
+        ovs.forEach(function(e){ map.removePositionMark(e); });
+        MapExtras.releaseOverlayIds(ovs);
+        return true;
     }
 
     // add the END mark on the map
     function addMarkEnd(lat, lon) {
-        map.addPositionMark(id_ARRIVAL, lat, lon);
+        var ovs = MapExtras.findOverlays("ROUTE", 2);
+        if (ovs.length > 0)
+            map.addPositionMark(ovs[0], lat, lon);
+        else
+            map.addPositionMark(MapExtras.addOverlay("ROUTE", 2), lat, lon);
+        return true;
     }
 
     // remove the END mark on the map
     function removeMarkEnd() {
-        map.removePositionMark(id_ARRIVAL);
+        var ovs = MapExtras.clearOverlays("ROUTE", 2);
+        ovs.forEach(function(e){ map.removePositionMark(e); });
+        MapExtras.releaseOverlayIds(ovs);
+        return true;
     }
 
     // add a mark on the map
     function addMark(id, lat, lon) {
-        map.addPositionMark(id_MARK_POINT + id, lat, lon);
+        var ovs = MapExtras.findOverlays("MARK", id);
+        if (ovs.length > 0)
+            map.addPositionMark(ovs[0], lat, lon);
+        else
+            map.addPositionMark(MapExtras.addOverlay("MARK", id), lat, lon);
+        return true;
     }
 
     // remove a mark on the map
     function removeMark(id) {
-        map.removePositionMark(id_MARK_POINT + id);
+        var ovs = MapExtras.clearOverlays("MARK", id);
+        ovs.forEach(function(e){ map.removePositionMark(e); });
+        MapExtras.releaseOverlayIds(ovs);
+        return true;
     }
 
-    // add a way point on the map
-    function addWayPoint(id, lat, lon) {
-        var wpt = map.createOverlayNode("_waypoint");
-        wpt.addPoint(lat, lon);
-        wpt.name = "Pos: " + lat.toFixed(4) + " " + lon.toFixed(4);
-        map.addOverlayObject(id_WAY_POINT + id, wpt);
+    // add a POI on the map
+    function addPOI(group, id, lat, lon, label, type) {
+        var poi = map.createOverlayNode(type);
+        poi.addPoint(lat, lon);
+        poi.name = label;
+        var ovs = MapExtras.findOverlays(group, id);
+        if (ovs.length > 0)
+             map.addOverlayObject(ovs[0], poi);
+        else
+            map.addOverlayObject(MapExtras.addOverlay(group, id), poi);
+        return true;
     }
 
-    // remove a way point on the map
-    function removeWayPoint(id) {
-        map.removeOverlayObject(id_WAY_POINT + id);
+    // remove a POI on the map
+    function removePOI(group, id) {
+        var ovs = MapExtras.clearOverlays(group, id);
+        ovs.forEach(function(e){ map.removeOverlayObject(e); });
+        MapExtras.releaseOverlayIds(ovs);
+        return true;
     }
 
     // add the recording track on the map
     function addRecording(overlayObject) {
-        map.addOverlayObject(id_RECORDING, overlayObject);
+        var ovs = MapExtras.findOverlays("RECORDING", 0);
+        if (ovs.length > 0)
+             map.addOverlayObject(ovs[0], overlayObject);
+        else
+            map.addOverlayObject(MapExtras.addOverlay("RECORDING", 0), overlayObject);
+        return true;
     }
 
     // remove the recording track on the map
     function removeRecording() {
-        map.removeOverlayObject(id_RECORDING);
+        var ovs = MapExtras.clearOverlays("RECORDING", 0);
+        ovs.forEach(function(e){ map.removeOverlayObject(e); });
+        MapExtras.releaseOverlayIds(ovs);
+        return true;
     }
-
-    // keep track of courses added on the map
-    property var courseObjects: []
 
     // add a course on the map
     function addCourse(bid, overlays) {
         if (overlays.length > 0) {
             for (var i = 0; i < overlays.length; ++i) {
-                console.log("Add overlay " + (bid + i) + " : " + overlays[i].objectType + " , " + overlays[i].name);
-                map.addOverlayObject((bid + i), overlays[i]);
+                console.log("Add overlay " + (bid) + " : " + overlays[i].objectType + " , " + overlays[i].name);
+                map.addOverlayObject(MapExtras.addOverlay("COURSE", bid), overlays[i]);
             }
-            courseObjects.push({ "bid": bid, "overlays": overlays});
             return true;
         }
         return false;
@@ -113,30 +152,54 @@ QtObject {
 
     // remove a previously added course on the map
     function removeCourse(bid) {
-        for (var c = 0; c < courseObjects.length; ++c) {
-            if (courseObjects[c].bid === bid) {
-                var len = courseObjects[c].overlays.length;
-                for (var i = 0; i < len; ++i) {
-                    console.log("Remove overlay " + (bid + i));
-                    map.removeOverlayObject((bid + i));
-                }
-                courseObjects.splice(c, 1);
-                return true;
-            }
-        }
-        return false;
+        var ovs = MapExtras.clearOverlays("COURSE", bid);
+        ovs.forEach(function(e){ map.removeOverlayObject(e); });
+        MapExtras.releaseOverlayIds(ovs);
+        return true;
     }
 
     // remove all previously added courses on the map
     function removeAllCourses() {
-        for (var c = 0; c < courseObjects.length; ++c) {
-            var bid = courseObjects[c].bid;
-            var len = courseObjects[c].overlays.length;
-            for (var i = 0; i < len; ++i) {
-                console.log("Remove overlay " + (bid + i));
-                map.removeOverlayObject((bid + i));
-            }
-        }
-        courseObjects = [];
+        var keys = MapExtras.findOverlayKeys("COURSE");
+        keys.forEach(function(k){
+            var ovs = MapExtras.clearOverlays("COURSE", k);
+            console.log("Remove overlay " + (k));
+            ovs.forEach(function(e){ map.removeOverlayObject(e); });
+            MapExtras.releaseOverlayIds(ovs);
+        });
+        return true;
     }
+
+    function addFavoritePOI(id) {
+        var poi = FavoritesModel.getById(id);
+        addPOI("FAVORITE", id, poi.lat, poi.lon, poi.label, "_waypoint_favorite");
+    }
+
+    function removeFavoritePOI(id) {
+        var ovs = MapExtras.clearOverlays("FAVORITE", id);
+        ovs.forEach(function(e){ map.removeOverlayObject(e); });
+        MapExtras.releaseOverlayIds(ovs);
+    }
+
+    function showFavorites() {
+        if (!internal.showFavorites) {
+            internal.showFavorites = true;
+            for (var i = 0; i < FavoritesModel.rowCount(); ++i) {
+                addFavoritePOI(FavoritesModel.get(i).id)
+            }
+            FavoritesModel.appended.connect(addFavoritePOI);
+            FavoritesModel.removed.connect(removeFavoritePOI);
+        }
+    }
+
+    function hideFavorites() {
+        if (internal.showFavorites) {
+            var keys = MapExtras.findOverlayKeys("FAVORITE");
+            keys.forEach(function(k){ removeFavoritePOI(k); });
+            FavoritesModel.appended.disconnect(addFavoritePOI);
+            FavoritesModel.removed.disconnect(removeFavoritePOI);
+            internal.showFavorites = false;
+        }
+    }
+
 }

@@ -50,6 +50,7 @@
 #include <QMagnetometer>
 #include <QGyroscope>
 #include <qsensorbackend.h>
+#include <list>
 
 #define FILTER_COEFFICIENT 0.98f
 #define EPSILON 0.000000001f
@@ -88,6 +89,9 @@ private:
     float _timestamp;
     bool _initState;
 
+    qreal _value;
+    std::list<qreal> _gaps;
+
     void checkValues();
     void calculateFusedOrientation();
     float *matrixMultiplication(float *A, float *B);
@@ -97,6 +101,7 @@ private:
     static void getRotationMatrixFromVector(float *R, size_t lenR, float *rotationVector, size_t lenRotationVector);
     static bool getRotationMatrix(float *R, size_t lenR, float *I, size_t lenI, float *gravity, float *geomagnetic);
     static float *getOrientation(float *R, size_t lenR, float *values);
+    static quint64 produceTimestamp();
 
 private slots:
     void onAccelerometerChanged();

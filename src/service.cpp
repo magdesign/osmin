@@ -26,13 +26,27 @@ Service::Service(const QString& url, const QString& rootDir)
 , m_rootDir(rootDir)
 {
   m_pollTimeout.start();
-  // register the generic compass
-  m_compass = new BuiltInCompass();
+  // register the owned generic compass
+  m_compass = new BuiltInCompass(this);
   m_sensor = new BuiltInSensorPlugin();
   m_sensor->registerSensors();
-  m_SB = m_sensor->createBackend(m_compass);
-  // register the position source
+  // register the owned position source
   m_position = QGeoPositionInfoSource::createDefaultSource(this);
+}
+
+Service::Service(const QString& url, const QString& rootDir
+          , QSensor * compassSource
+          , QGeoPositionInfoSource * positionSource)
+    : m_url(url)
+    , m_rootDir(rootDir)
+{
+  m_pollTimeout.start();
+  // register the provided compass,
+  // it isn't owned and won't be deleted in destructor
+  m_compass = compassSource;
+  // register the position source,
+  // it isn't owned and won't be deleted in destructor
+  m_position = positionSource;
 }
 
 Service::~Service()
@@ -43,11 +57,8 @@ Service::~Service()
     delete m_tracker;
     delete m_node;
   }
-  if (m_position)
-    delete m_position;
-  delete m_SB;
-  delete m_sensor;
-  delete m_compass;
+  if (m_sensor)
+    delete m_sensor;
   qInfo("%s", __FUNCTION__);
 }
 
@@ -58,6 +69,7 @@ void Service::run()
 
   m_tracker = new Tracker();
   m_tracker->init(m_rootDir);
+  connect(m_tracker, &Tracker::trackerMagneticDipChanged, this, &Service::onTrackerMagneticDipChanged);
   connect(m_tracker, &Tracker::trackerProcessingChanged, this, &Service::onTrackerProcessingChanged);
   connect(m_tracker, &Tracker::trackerRecordingChanged, this, &Service::onTrackerRecordingChanged);
   connect(m_tracker, &Tracker::trackerDataChanged, this, &Service::onTrackerDataChanged);
@@ -69,10 +81,10 @@ void Service::run()
   m_node = new QRemoteObjectHost(QUrl(m_url));
   m_node->enableRemoting(this);
 
-  connect(m_compass, &BuiltInCompass::readingChanged, this, &Service::onCompassReadingChanged, Qt::QueuedConnection);
+  connect(m_compass, &QSensor::readingChanged, this, &Service::onCompassReadingChanged, Qt::QueuedConnection);
   connect(this, &Service::compass_azimuthChanged, m_tracker, &Tracker::azimuthChanged);
   m_compass->setDataRate(COMPASS_DATARATE);
-  m_SB->start();
+  m_compass->start();
 
   if (m_position)
   {
@@ -99,6 +111,7 @@ void Service::run()
 
 void Service::ping(const QString &message)
 {
+  onTrackerMagneticDipChanged();
   onTrackerRecordingChanged();
   onTrackerProcessingChanged();
   onTrackerDataChanged();
@@ -209,6 +222,11 @@ void Service::tracker_resetData()
   m_tracker->reset();
 }
 
+void Service::tracker_setMagneticDip(double magneticDip)
+{
+  m_tracker->setMagneticDip(magneticDip);
+}
+
 void Service::onCompassReadingChanged()
 {
   if (!m_pollTimeout.hasExpired(COMPASS_MIN_INTERVAL))
@@ -312,4 +330,9 @@ void Service::onTrackerDataChanged()
         m_tracker->getAscent(),
         m_tracker->getDescent(),
         m_tracker->getMaxSpeed());
+}
+
+void Service::onTrackerMagneticDipChanged()
+{
+  emit tracker_magneticDipChanged(m_tracker->getMagneticDip());
 }

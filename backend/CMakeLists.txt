@@ -31,8 +31,8 @@ if(NOT BUILD_DEPENDENCIES)
 endif()
 if(NOT ZLIB_FOUND)
     download_project(PROJ zlib
-        URL "${CMAKE_CURRENT_SOURCE_DIR}/zlib-1.2.11.tar.gz"
-        URL_HASH MD5=d8c654d5d16f31de88db6b8c6a1bdc48
+        URL "${CMAKE_CURRENT_SOURCE_DIR}/zlib-1.2.13.tar.gz"
+        URL_HASH MD5=9c7d356c5acaa563555490676ca14d23
         PREFIX ${CMAKE_CURRENT_BINARY_DIR}
         UPDATE_DISCONNECTED ON)
     set(BUILD_SHARED_LIBS OFF)
@@ -42,9 +42,13 @@ if(NOT ZLIB_FOUND)
         ${CMAKE_CURRENT_BINARY_DIR}/zlib-build
         EXCLUDE_FROM_ALL
     )
-    set(ZLIB_LIBRARIES zlib)
+    set(ZLIB_LIBRARY zlib)
+    set(ZLIB_LIBRARIES ${ZLIB_LIBRARY})
+    set(ZLIB_INCLUDE_DIR "${zlib_BINARY_DIR}")
     set(ZLIB_INCLUDE_DIRS "${zlib_SOURCE_DIR}" "${zlib_BINARY_DIR}")
     set(ZLIB_FOUND ON)
+    export(TARGETS zlib FILE ZLIBTargets.cmake)
+    add_library(ZLIB::ZLIB ALIAS zlib)
     message(STATUS "Build ZLIB: ${zlib_BINARY_DIR}")
 endif()
 
@@ -59,7 +63,7 @@ if(NOT OPENSSL_FOUND)
     if(OPENSSL_DL_ABI STREQUAL "1.0")
         download_project(PROJ "openssl-${OPENSSL_DL_ABI}"
             GIT_REPOSITORY https://github.com/janbar/openssl-cmake.git
-            GIT_TAG 1.0.2p-20220130
+            GIT_TAG 1.0.2p-20231130
             GIT_SHALLOW 1
             PREFIX ${CMAKE_CURRENT_BINARY_DIR}
             UPDATE_DISCONNECTED ON)
@@ -67,7 +71,7 @@ if(NOT OPENSSL_FOUND)
         set(OPENSSL_DL_ABI "1.1")
         download_project(PROJ "openssl-${OPENSSL_DL_ABI}"
             GIT_REPOSITORY https://github.com/janbar/openssl-cmake.git
-            GIT_TAG 1.1.1n-20220327
+            GIT_TAG 1.1.1w-20231130
             GIT_SHALLOW 1
             PREFIX ${CMAKE_CURRENT_BINARY_DIR}
             UPDATE_DISCONNECTED ON)
@@ -86,17 +90,17 @@ if(NOT OPENSSL_FOUND)
     set(OPENSSL_CRYPTO_LIBRARY crypto PARENT_SCOPE)
     set(OPENSSL_INCLUDE_DIR "${openssl_BINARY_DIR}/include" "${openssl_BINARY_DIR}" PARENT_SCOPE)
     set(OPENSSL_FOUND ON PARENT_SCOPE)
+    export(TARGETS crypto ssl FILE OpenSSLTargets.cmake)
+    add_library(OpenSSL::Crypto ALIAS crypto)
+    add_library(OpenSSL::SSL ALIAS ssl)
     message(STATUS "Build OpenSSL: ${openssl_BINARY_DIR}")
 endif()
 
-# Provides dependency iconv
-if(NOT BUILD_DEPENDENCIES)
-    find_package(Iconv QUIET)
-endif()
+# Provides internal iconv
 if(NOT ICONV_FOUND)
     download_project(PROJ iconv
-        URL "${CMAKE_CURRENT_SOURCE_DIR}/libiconv-1.16.tar.gz"
-        URL_HASH MD5=988dea3347947084606c00cb1eaf9b6f
+        URL "${CMAKE_CURRENT_SOURCE_DIR}/libiconv-1.17.tar.gz"
+        URL_HASH MD5=afc24d7f498b1ad19e10780a98467dc5
         PREFIX ${CMAKE_CURRENT_BINARY_DIR}
         UPDATE_DISCONNECTED ON)
     set(BUILD_SHARED_LIBS OFF)
@@ -106,17 +110,21 @@ if(NOT ICONV_FOUND)
         ${CMAKE_CURRENT_BINARY_DIR}/iconv-build
         EXCLUDE_FROM_ALL
     )
-    set(ICONV_LIBRARIES iconv charset)
-    set(ICONV_INCLUDE_DIRS "${iconv_BINARY_DIR}/include")
-    set(ICONV_FOUND ON)
+    set(Iconv_LIBRARY iconv)
+    set(Iconv_LIBRARIES ${Iconv_LIBRARY})
+    set(Iconv_INCLUDE_DIR "${iconv_BINARY_DIR}/include")
+    set(Iconv_INCLUDE_DIRS "${iconv_BINARY_DIR}/include")
+    set(Iconv_FOUND ON)
+    export(TARGETS iconv FILE IconvTargets.cmake)
+    add_library(Iconv::Iconv ALIAS iconv)
     message(STATUS "Build iconv: ${iconv_BINARY_DIR}")
 endif()
 
-# Provides dependency marisa-trie
+# Provides internal marisa-trie
 if(NOT MARISA_FOUND)
     download_project(PROJ marisa
-        URL "${CMAKE_CURRENT_SOURCE_DIR}/marisa-0.2.5.tar.gz"
-        URL_HASH MD5=036ab06e7edf0059d602264cb6b26aca
+        URL "${CMAKE_CURRENT_SOURCE_DIR}/marisa-0.2.6.tar.gz"
+        URL_HASH MD5=caffa344057def4e5e81b6cff178e76f
         PREFIX ${CMAKE_CURRENT_BINARY_DIR}
         UPDATE_DISCONNECTED ON)
     set(BUILD_SHARED_LIBS OFF)
@@ -126,9 +134,13 @@ if(NOT MARISA_FOUND)
         ${CMAKE_CURRENT_BINARY_DIR}/marisa-build
         EXCLUDE_FROM_ALL
     )
+    set(MARISA_LIBRARY marisa)
     set(MARISA_LIBRARIES marisa)
+    set(MARISA_INCLUDE_DIR "${marisa_BINARY_DIR}")
     set(MARISA_INCLUDE_DIRS "${marisa_BINARY_DIR}")
     set(MARISA_FOUND ON)
+    export(TARGETS marisa FILE MarisaTargets.cmake)
+    add_library(Marisa::Marisa ALIAS marisa)
     message(STATUS "Build MARISA: ${marisa_BINARY_DIR}")
 endif()
 
@@ -136,33 +148,52 @@ endif()
 if(NOT BUILD_DEPENDENCIES)
     find_package(LibXml2 QUIET)
 endif()
-if(NOT LIBXML2_FOUND)
+if(NOT LibXml2_FOUND)
     download_project(PROJ xml2
-        URL "${CMAKE_CURRENT_SOURCE_DIR}/libxml2-2.9.9.tar.gz"
-        URL_HASH MD5=c6af3593f30f6208ed484cdb336c7c65
+        URL "${CMAKE_CURRENT_SOURCE_DIR}/libxml2-2.9.14.tar.gz"
+        URL_HASH MD5=7eba7ae2403717d7d611b957b528eff7
         PREFIX ${CMAKE_CURRENT_BINARY_DIR}
         UPDATE_DISCONNECTED ON)
     set(BUILD_SHARED_LIBS OFF)
-    set(SKIP_INSTALL_ALL ON)
     set(LIBXML2_WITH_ZLIB ON)
     set(LIBXML2_WITH_LZMA OFF)
     set(LIBXML2_WITH_ICONV ON)
     set(LIBXML2_WITH_ICU OFF)
+    set(LIBXML2_WITH_THREADS OFF)
+    set(LIBXML2_WITH_PYTHON OFF)
+    set(LIBXML2_WITH_HTTP OFF)
+    set(LIBXML2_WITH_FTP OFF)
+    set(LIBXML2_WITH_DEBUG OFF)
+    set(LIBXML2_WITH_PROGRAMS OFF)
+    set(LIBXML2_WITH_TESTS OFF)
+    set(SKIP_INSTALL_ALL ON)
     add_subdirectory(
         ${CMAKE_CURRENT_BINARY_DIR}/xml2-src
         ${CMAKE_CURRENT_BINARY_DIR}/xml2-build
         EXCLUDE_FROM_ALL
     )
     set(LIBXML2_LIBRARY xml2)
+    set(LIBXML2_LIBRARIES xml2)
     set(LIBXML2_INCLUDE_DIR "${xml2_BINARY_DIR}")
-    set(LIBXML2_FOUND ON)
-    set(PC_LIBXML_STATIC_LIBRARIES ${ZLIB_LIRARIES} ${ICONV_LIBRARIES})
+    set(LIBXML2_INCLUDE_DIRS "${xml2_BINARY_DIR}")
+    set(LibXml2_FOUND ON)
+    set(PC_LIBXML_STATIC_LIBRARIES ${ZLIB_LIRARIES} ${Iconv_LIBRARIES})
+    add_library(LibXml2::LibXml2 ALIAS xml2)
     message(STATUS "Build xml2: ${xml2_BINARY_DIR}")
 endif()
 
 # Provides dependency libosmscout
 set(libosmscout_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/libosmscout")
 set(libosmscout_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/libosmscout")
+
+# First apply our patches in the source of lib
+list(APPEND libosmscout_patches
+)
+foreach(patch IN LISTS libosmscout_patches)
+    execute_process(
+        COMMAND git apply ${CMAKE_CURRENT_SOURCE_DIR}/${patch}
+        WORKING_DIRECTORY ${libosmscout_SOURCE_DIR})
+endforeach()
 
 set(BUILD_SHARED_LIBS               OFF CACHE BOOL "" FORCE)
 set(OSMSCOUT_HAVE_LIB_MARISA        ON  CACHE BOOL "" FORCE)
@@ -189,6 +220,7 @@ set(OSMSCOUT_BUILD_TOOL_IMPORT      ON  CACHE BOOL "" FORCE)
 set(OSMSCOUT_BUILD_TOOL_OSMSCOUT2   OFF CACHE BOOL "" FORCE)
 set(OSMSCOUT_BUILD_TOOL_OSMSCOUTOPENGL OFF CACHE BOOL "" FORCE)
 set(OSMSCOUT_BUILD_TOOL_STYLEEDITOR ON  CACHE BOOL "" FORCE)
+set(OSMSCOUT_BUILD_TOOL_PUBLICTRANSPORTMAP OFF CACHE BOOL "" FORCE)
 set(OSMSCOUT_BUILD_WEBPAGE          OFF CACHE BOOL "" FORCE)
 add_subdirectory(libosmscout EXCLUDE_FROM_ALL)
 
@@ -197,17 +229,20 @@ set(LIBOSMSCOUT_LIBRARIES
     PARENT_SCOPE
 )
 
+#"${libosmscout_BINARY_DIR}/libosmscout/privateinclude"
 set(LIBOSMSCOUT_INCLUDE_DIRS
-    "${libosmscout_BINARY_DIR}/libosmscout/privateinclude"
+    "${libosmscout_BINARY_DIR}/libosmscout/include"
     "${libosmscout_BINARY_DIR}/libosmscout-client-qt/include"
     "${libosmscout_BINARY_DIR}/libosmscout-gpx/include"
-    "${libosmscout_BINARY_DIR}/libosmscout/include"
+    "${libosmscout_BINARY_DIR}/libosmscout-import/include"
     "${libosmscout_BINARY_DIR}/libosmscout-map/include"
     "${libosmscout_BINARY_DIR}/libosmscout-map-qt/include"
+    "${libosmscout_SOURCE_DIR}/libosmscout/include"
     "${libosmscout_SOURCE_DIR}/libosmscout-client-qt/include"
+    "${libosmscout_SOURCE_DIR}/libosmscout-gpx/include"
+    "${libosmscout_SOURCE_DIR}/libosmscout-import/include"
     "${libosmscout_SOURCE_DIR}/libosmscout-map-qt/include"
     "${libosmscout_SOURCE_DIR}/libosmscout-map/include"
-    "${libosmscout_SOURCE_DIR}/libosmscout/include"
     "${MARISA_INCLUDE_DIRS}"
     PARENT_SCOPE
 )

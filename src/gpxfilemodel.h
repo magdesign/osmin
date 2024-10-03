@@ -8,7 +8,7 @@
 #include <QAbstractListModel>
 #include <QDateTime>
 #include <QString>
-#include <QSet>
+#include <QStringList>
 
 #define OVERLAY_WAY_TRACK_TYPE            "_track"
 #define OVERLAY_WAY_HIGHLIGHTED_TYPE      "_highlighted"
@@ -32,8 +32,8 @@ public:
 
   QString name() const;
   QString description() const;
-  QList<GPXObject*> tracks() const;
-  QList<GPXObject*> waypoints() const;
+  QList<GPXObjectTrack> tracks();
+  QList<GPXObjectWayPoint> waypoints();
 
 private:
   bool m_valid;
@@ -62,25 +62,29 @@ public:
 
 class GPXObjectTrack : public GPXObject
 {
-  friend class GPXFileModel;
 public:
-  GPXObjectTrack(const osmscout::gpx::Track& track, int id) : m_track(track), m_id(id) { }
+  GPXObjectTrack(osmscout::gpx::Track& track, int id) : m_track(track), m_id(id) { }
+  explicit GPXObjectTrack(const GPXObjectTrack& other) : m_track(other.m_track), m_id(other.m_id) { }
+  GPXObjectTrack& operator=(const GPXObjectTrack& other) { m_track = other.m_track; m_id = other.m_id; return *this; }
   int id() const override { return m_id; }
   ObjectType type() const override { return Track; }
   QString name() const override { return QString::fromUtf8(m_track.name.value_or(std::to_string(m_id)).c_str()); }
   QString description() const override { return QString::fromUtf8(m_track.desc.value_or("").c_str()); }
   double length() const { return m_track.GetLength().AsMeter(); }
   QString displayColor() const;
+
+  const osmscout::gpx::Track& data() const { return m_track; };
 private:
-  const osmscout::gpx::Track& m_track;
+  osmscout::gpx::Track& m_track;
   int m_id;
 };
 
 class GPXObjectWayPoint : public GPXObject
 {
-  friend class GPXFileModel;
 public:
-  GPXObjectWayPoint(const osmscout::gpx::Waypoint& waipoint, int id) : m_waypoint(waipoint), m_id(id) { }
+  GPXObjectWayPoint(osmscout::gpx::Waypoint& waipoint, int id) : m_waypoint(waipoint), m_id(id) { }
+  explicit GPXObjectWayPoint(const GPXObjectWayPoint& other) : m_waypoint(other.m_waypoint), m_id(other.m_id) { }
+  GPXObjectWayPoint& operator=(const GPXObjectWayPoint& other) { m_waypoint = other.m_waypoint; m_id = other.m_id; return *this; }
   int id() const override { return m_id; }
   ObjectType type() const override { return WayPoint; }
   QString name() const override { return QString::fromUtf8(m_waypoint.name.value_or(std::to_string(m_id)).c_str()); }
@@ -89,8 +93,10 @@ public:
   double lat() const { return m_waypoint.coord.GetLat(); }
   double lon() const { return m_waypoint.coord.GetLon(); }
   double elevation() const { return m_waypoint.elevation.value_or(0.0); }
+
+  const osmscout::gpx::Waypoint& data() const { return m_waypoint; };
 private:
-  const osmscout::gpx::Waypoint& m_waypoint;
+  osmscout::gpx::Waypoint& m_waypoint;
   int m_id;
 };
 
@@ -127,7 +133,7 @@ public:
     DataLoaded    = 2,
   } DataStatus;
 
-  static const QSet<QString>& customTypeSet();
+  static const QStringList customTypeSet();
 
   GPXFileModel(QObject* parent = nullptr);
   virtual ~GPXFileModel();

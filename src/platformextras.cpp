@@ -20,32 +20,53 @@
 #include <QDir>
 #include <QStandardPaths>
 #include <QStorageInfo>
-#ifdef Q_OS_ANDROID
+#include <QDebug>
+
+#if defined(SAILFISHOS)
+#define AUTO_MOUNT        "/run/media/"
+
+#elif defined(Q_OS_ANDROID)
 #include <QtAndroid>
 #include <QAndroidJniEnvironment>
-#endif
-
-#ifdef SAILFISHOS
-#define AUTO_MOUNT        "/run/media/"
-#else
-#ifdef Q_OS_ANDROID
 #define AUTO_MOUNT        "/storage/"
+
 #else
 #define AUTO_MOUNT        "/media/"
-#endif
 #endif
 
 PlatformExtras::PlatformExtras(QObject* parent)
 : QObject(parent)
 , m_preventBlanking(false)
+, m_preventBlankingMask(0)
 {
+#ifdef HAVE_DBUS
+  // register dbus service for inhibitor
+  RemoteService* inhibitor = new RemoteService("org.freedesktop.ScreenSaver",
+                                               "/org/freedesktop/ScreenSaver",
+                                               "org.freedesktop.ScreenSaver");
+  if (inhibitor->interface.isValid())
+    m_remoteServices.insert("inhibitor", inhibitor);
+  else
+  {
+    qWarning("Failed to register DBus interface for inhibitor");
+    delete inhibitor;
+  }
+#endif
 }
 
 PlatformExtras::~PlatformExtras()
 {
+  // clear inhibitor lock
+  doPreventBlanking(false);
+#ifdef HAVE_DBUS
+  // free registered DBus services
+  for (RemoteService* svc : qAsConst(m_remoteServices))
+    delete svc;
+  m_remoteServices.clear();
+#endif
 }
 
-QString PlatformExtras::getHomeDir()
+QString PlatformExtras::getDataDir()
 {
 #ifdef Q_OS_ANDROID
   QAndroidJniObject activity = QtAndroid::androidActivity();
@@ -58,7 +79,21 @@ QString PlatformExtras::getHomeDir()
 #endif
 }
 
-QString PlatformExtras::getDataDir(const char* appId)
+QString PlatformExtras::getAppDir()
+{
+#ifdef Q_OS_ANDROID
+  // from Android 14, only internal storage can be used for resources
+  // file descriptors can be hold during the life of the instance
+  QAndroidJniObject activity = QtAndroid::androidActivity();
+  QAndroidJniObject file = activity.callObjectMethod("getFilesDir", "()Ljava/io/File;");
+  QAndroidJniObject path = file.callObjectMethod("getAbsolutePath", "()Ljava/lang/String;");
+  return path.toString();
+#else
+  return getDataDir();
+#endif
+}
+
+QString PlatformExtras::getAssetDir(const char* appId)
 {
 #ifdef Q_OS_ANDROID
   return "assets:";
@@ -71,16 +106,11 @@ QStringList PlatformExtras::getStorageDirs()
 {
   QStringList dirs;
 #ifdef Q_OS_ANDROID
-  /*
-   * WARNING: SDCARD storage cannot be properly managed since Android 10. Therefore I return only the internal storage.
-   */
-  QAndroidJniObject activity = QtAndroid::androidActivity();
-  QAndroidJniObject nullstr = QAndroidJniObject::fromString("");
-  QAndroidJniObject file = activity.callObjectMethod("getExternalFilesDir", "(Ljava/lang/String;)Ljava/io/File;", nullstr.object<jstring>());
-  QAndroidJniObject path = file.callObjectMethod("getAbsolutePath", "()Ljava/lang/String;");
-  dirs.push_back(path.toString());
+  // from Android 14, only internal storage can be used for databases
+  // file descriptors can be hold during the life of the instance
+  dirs.push_back(getAppDir());
 #else
-  // search for a mounted sdcard
+  // search for mounted volumes
   for (const QStorageInfo& storage : QStorageInfo::mountedVolumes())
   {
     QString path = storage.rootPath();
@@ -94,21 +124,66 @@ QStringList PlatformExtras::getStorageDirs()
   return dirs;
 }
 
-void PlatformExtras::setPreventBlanking(bool on)
+void PlatformExtras::setPreventBlanking(bool on, int mask)
 {
-  m_preventBlanking = on;
+  if (on)
+  {
+    if (!m_preventBlanking)
+      doPreventBlanking(true);
+    m_preventBlankingMask |= mask;
+  }
+  else
+  {
+    m_preventBlankingMask &= (~ mask);
+    if (m_preventBlankingMask == 0 && m_preventBlanking)
+      doPreventBlanking(false);
+  }
+}
 
-#ifdef Q_OS_ANDROID
+void PlatformExtras::doPreventBlanking(bool on)
+{
+  if (m_preventBlanking == on)
+    return;
+  m_preventBlanking = on;
+#if defined(Q_OS_ANDROID)
   {
     QtAndroid::runOnAndroidThread([on]
     {
-      static const int FLAG_KEEP_SCREEN_ON = QAndroidJniObject::getStaticField<jint>("android/view/WindowManager$LayoutParams", "FLAG_KEEP_SCREEN_ON");
-      auto window = QtAndroid::androidActivity().callObjectMethod("getWindow", "()Landroid/view/Window;");
-      if (on)
-        window.callMethod<void>("addFlags", "(I)V", FLAG_KEEP_SCREEN_ON);
-      else
-        window.callMethod<void>("clearFlags", "(I)V", FLAG_KEEP_SCREEN_ON);
+      QAndroidJniObject activity = QtAndroid::androidActivity();
+      QAndroidJniObject::callStaticMethod<void>("io/github/janbar/osmin/QtAndroidHelper",
+                                                "preventBlanking",
+                                                "(Landroid/content/Context;Z)V",
+                                                activity.object(), (on ? JNI_TRUE : JNI_FALSE));
     });
   }
+#elif defined(HAVE_DBUS)
+  {
+    auto inhibitor = m_remoteServices.find("inhibitor");
+    if (inhibitor == m_remoteServices.end())
+    {
+      // rollback
+      m_preventBlanking = !on;
+      return;
+    }
+    else if(on)
+    {
+      QDBusReply<uint> reply = inhibitor.value()->interface.call("Inhibit", "osmin", "navigation enabled");
+      if (reply.isValid())
+        inhibitor.value()->cookie = reply.value();
+      else
+      {
+        qWarning("Inhibitor failed: %s", reply.error().message().toUtf8().constData());
+        // rollback
+        m_preventBlanking = !on;
+        return;
+      }
+    }
+    else
+      inhibitor.value()->interface.call("UnInhibit", inhibitor.value()->cookie);
+  }
+#else
+  qWarning("Inhibitor isn't implemented for this platform");
 #endif
+  qInfo("PreventBlanking: %s", (m_preventBlanking ? "true" : "false"));
+  emit preventBlanking();
 }

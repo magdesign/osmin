@@ -46,10 +46,7 @@ MapPage {
 
     property bool preventBlanking: navigation && !applicationSuspended
     onPreventBlankingChanged: {
-        if (PlatformExtras.preventBlanking !== preventBlanking) {
-            PlatformExtras.preventBlanking = preventBlanking;
-            console.log("PreventBlanking: " + preventBlanking);
-        }
+        PlatformExtras.setPreventBlanking(preventBlanking, 1); // lock bit 1
     }
 
     function showPositionInfo() {
@@ -93,8 +90,6 @@ MapPage {
                 settings.courseId = 0;
             }
         }
-        // on azimuth changed
-        compass.polled.connect(function(azimuth, rotation){ mapView.azimuth = azimuth; });
 
         // configure style from setting
         var flags = JSON.parse(settings.styleFlags);
@@ -102,6 +97,10 @@ MapPage {
             flags.push({ "name": "daylight", "value": !nightView });
             setStyleFlags(flags);
         }
+
+        // show/hide favorite POIs
+        if (mainView.showFavorites)
+            overlayManager.showFavorites();
     }
 
     property QtObject mark: QtObject {
@@ -116,7 +115,6 @@ MapPage {
     property bool rotateEnabled: false
     property real rotation: 0.0 // rotation of the map (radians)
     property bool lockRotation: true // lock or unlock rotation of the map
-    property real azimuth: 0.0 // the current azimuth (degrees)
 
     onRotationChanged: {
         if (lockRotation)
@@ -151,7 +149,7 @@ MapPage {
             provider: hillshadeProvider
         }
 
-        onTap: {
+        onTap: function(screenX, screenY, lat, lon) {
             mark.screenX = screenX;
             mark.screenY = screenY;
             mark.lat = lat;
@@ -176,7 +174,7 @@ MapPage {
             }
         }
 
-        onLongTap: {
+        onLongTap: function(screenX, screenY, lat, lon) {
             mark.showOverlay = true;
             mark.screenX = screenX;
             mark.screenY = screenY;
@@ -191,7 +189,8 @@ MapPage {
             }
         }
 
-        onIconTapped: {
+        onIconTapped: function(screenCoord, lat, lon, databasePath, objectType, objectId, poiId, type,
+                               name, altName, ref, operatorName, phone, website, openingHours) {
             mark.showOverlay = false;
             mark.screenX = screenCoord.x;
             mark.screenY = screenCoord.y;
@@ -207,7 +206,7 @@ MapPage {
         }
 
         Component.onCompleted: {
-            map.setVehicleScaleFactor(0.0); // hide vehicle
+            map.setVehicleScaleFactor(0.1); // hide vehicle
             positionSource.dataUpdated.connect(function(valid, lat, lon, accValid, acc, alt){
                 locationChanged(valid, lat, lon, accValid, acc);
             });
@@ -227,6 +226,7 @@ MapPage {
         },
         State {
             name: "locationInfo"
+            PropertyChanges { target: searchAroundPlace; visible: true; }
             PropertyChanges { target: addFavorite; visible: true; }
             PropertyChanges { target: goThere; visible: true; }
         },
@@ -273,15 +273,11 @@ MapPage {
             // unlock rotation and disable rotate
             lockRotation = false;
             rotateEnabled = false;
-            // activate azimuth
-            compass.active = !applicationSuspended;
             // show vehicle icon
             map.setVehicleScaleFactor(1.0);
         } else {
             // hide vehicle icon
-            map.setVehicleScaleFactor(0.0);
-            // deactivate azimuth
-            compass.active = false;
+            map.setVehicleScaleFactor(0.1);
             // lock rotation
             mapView.rotation = 0.0;
             lockRotation = true;
@@ -353,7 +349,7 @@ MapPage {
         anchors.bottom: parent.bottom
         anchors.left: parent.left
         text: "© OpenStreetMap contributors"
-        font.pointSize: units.fs("x-small")
+        font.pixelSize: units.fs("x-small")
         font.weight: Font.Thin
         color: nightView ? "white" : "black"
         visible: !showToolbar && !navigation
@@ -397,7 +393,7 @@ MapPage {
         visible: mapView.state === "view" && !showToolbar && Tracker.isRecording
         borderPadding: units.gu(1.0)
         label.text: qsTr("Mark")
-        label.font.pointSize: units.fs("medium")
+        label.font.pixelSize: units.fs("medium")
         label.color: "black"
         opacity: 0.7
         height: units.gu(6)
@@ -468,7 +464,7 @@ MapPage {
         opacity: rotateEnabled || navigation ? 0.9 : 0.7
         height: units.gu(6)
         onClicked: rotateEnabled = !rotateEnabled
-        rotation: navigation ? (360 - mapView.azimuth) : (mapView.rotation * 180.0 / Math.PI)
+        rotation: navigation ? (-180.0 * Tracker.bearing / Math.PI) : (180.0 * mapView.rotation / Math.PI)
         visible: !popNavigatorInfo.visible
         enabled: !navigation
     }
@@ -486,7 +482,7 @@ MapPage {
             Label {
                 id: currentSpeed
                 text: Converter.readableSpeed(Tracker.currentSpeed)
-                font.pointSize: 1.5 * units.fs("x-large")
+                font.pixelSize: 1.5 * units.fs("x-large")
                 color: nightView ? "white" : "black"
             }
             Row {
@@ -494,13 +490,13 @@ MapPage {
                 Label {
                     id: duration
                     text: Converter.panelDurationHMS(Tracker.duration)
-                    font.pointSize: units.fs("medium")
+                    font.pixelSize: units.fs("medium")
                     color: nightView ? "white" : "black"
                 }
                 Label {
                     id: distance
                     text: Converter.panelDistance(Tracker.distance)
-                    font.pointSize: units.fs("medium")
+                    font.pixelSize: units.fs("medium")
                     color: nightView ? "white" : "black"
                 }
             }
@@ -511,7 +507,7 @@ MapPage {
                 enabled: false
                 height: units.gu(2)
                 borderPadding: 0
-                label.font.pointSize: units.fs("medium")
+                label.font.pixelSize: units.fs("medium")
                 label.text: Converter.panelElevation(Tracker.elevation)
             }
         }
@@ -537,7 +533,7 @@ MapPage {
         opacity: 0.7
         height: units.gu(6)
         label.text: qsTr("Go")
-        label.font.pointSize: units.fs("medium")
+        label.font.pixelSize: units.fs("medium")
         label.color: "black"
         onClicked: {
             navigateTo(popLocationInfo.placeLat,
@@ -584,6 +580,48 @@ MapPage {
                         popLocationInfo.isFavorite = 0;
                 });
             }
+        }
+    }
+    // Search around place. The button is visible in state 'locationInfo'
+    MapIcon {
+        id: searchAroundPlace
+        visible: false
+        z: 1
+        anchors.bottom: parent.bottom
+        anchors.left: addFavorite.right
+        anchors.margins: units.gu(1)
+        source: "qrc:/images/trip/search.svg"
+        color: "black"
+        backgroundColor: "white"
+        borderPadding: units.gu(1.0)
+        opacity: 0.7
+        height: units.gu(6)
+        onClicked: {
+            var page = stackView.push("qrc:/controls2/SearchPlace.qml", {
+                               "searchCenterLat": popLocationInfo.placeLat,
+                               "searchCenterLon": popLocationInfo.placeLon,
+                               "acceptLabel": qsTr("Go"),
+                               "acceptIcon" : "qrc:/images/trip/navigator.svg",
+                               "showPositionEnabled": true
+                           });
+            ToolBox.connectOnce(page.selectLocation, function(location, lat, lon, label){
+                 if (lat !== NaN && lon !== NaN && label !== "") {
+                    popRouting.goTo(lat, lon, label);
+                 }
+            });
+            ToolBox.connectOnce(page.showPosition, function(lat, lon){
+                 if (lat !== NaN && lon !== NaN) {
+                     map.showCoordinatesInstantly(lat, lon);
+                     mark.showOverlay = true;
+                     mark.lat = lat;
+                     mark.lon = lon;
+                     mark.screenX = map.width / 2;
+                     mark.screenY = map.height / 2;
+                     if (navigation)
+                         navigation = false;
+                     popLocationInfo.show();
+                 }
+            });
         }
     }
 
@@ -971,7 +1009,7 @@ MapPage {
                 overlayManager.addMark(0, mark.lat, mark.lon);
             }
             if (mark.screenY < widgetBottomY / 2)
-                map.up();
+                map.moveUp();
             popLocationInfo.searchLocation(mark.lat, mark.lon);
             visible = true;
         }
@@ -1127,12 +1165,35 @@ MapPage {
         }
     }
 
-    // On android disable navigation when the app is suspended
+    property QtObject suspendedState: QtObject {
+        property bool navigation: false
+    }
+
     Connections {
         target: mainView
         function onApplicationSuspendedChanged() {
-            if ((Android || DeviceMobile) && applicationSuspended && navigation)
-                navigation = false;
+            // On device mobile (e.g Android) disable all when the app is suspended
+            if (DeviceMobile) {
+                if (applicationSuspended) {
+                    rotateEnabled = false;
+                    map.lockToPosition = false;
+                    // save current state
+                    suspendedState.navigation = navigation;
+                    // disable navigation state
+                    if (navigation)
+                        navigation = false;
+                } else {
+                    // restore navigation state
+                    if (suspendedState.navigation)
+                        navigation = true;
+                }
+            }
+        }
+        function onShowFavoritesChanged() {
+            if (showFavorites)
+                overlayManager.showFavorites();
+            else
+                overlayManager.hideFavorites();
         }
     }
 
@@ -1157,7 +1218,7 @@ MapPage {
 
     GPXFileModel {
         id: courseFile
-        onParseFinished: {
+        onParseFinished: function(succeeded) {
             if (succeeded)
                 loadData();
         }
@@ -1192,23 +1253,20 @@ MapPage {
 
     function configureRotation(enabled) {
         if (enabled) {
-            compass.active = !applicationSuspended;
-            compass.polled.connect(handleRotation);
+            Tracker.trackerPositionChanged.connect(handleRotation);
         } else {
-            compass.polled.disconnect(handleRotation);
-            compass.active = false;
+            Tracker.trackerPositionChanged.disconnect(handleRotation);
             mapView.rotation = 0.0;
         }
     }
 
-    function handleRotation(azimuth, rotation) {
-        var d = rotation - map.view.angle;
-        if (d > Math.PI)
-            d = d - Math.PI*2.0;
-        else if (d < -Math.PI)
-            d = d + Math.PI*2.0;
+    function handleRotation() {
+        var pi2 = Math.PI*2.0;
+        var d = pi2 - Tracker.bearing - map.view.angle;
+        d = (d > Math.PI ? d - pi2 : d < -Math.PI ? d + pi2 : d);
         if (d > 0.14 || d < -0.14) {
-            mapView.rotation = (map.view.angle + d);
+            let r = map.view.angle + d;
+            mapView.rotation = (r > pi2 ? r - pi2 : r < 0 ? r + pi2 : r);
         }
     }
 
@@ -1223,6 +1281,7 @@ MapPage {
             if (Service.status === Service.ServiceConnected) {
                 popInfo.open(qsTr("Tracker service is connected"), "limegreen", "black");
                 // clear all data before ping ALL
+                Tracker.magneticDip = settings.magneticDip;
                 overlayManager.removeRecording();
                 overlayManager.removeMark(1);
                 overlayRecording.clear();

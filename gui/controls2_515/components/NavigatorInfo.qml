@@ -152,12 +152,12 @@ Item {
                         id: distanceToNextStep
                         text: Converter.readableDistance(navigator.nextRouteStep.distanceTo)
                         color: styleMap.popover.foregroundColor
-                        font.pointSize: units.fs("x-large")
+                        font.pixelSize: units.fs("x-large")
                     }
                     Text {
                         id: nextStepDescription
                         text: navigator.nextRouteStep.shortDescription
-                        font.pointSize: units.fs("large")
+                        font.pixelSize: units.fs("large")
                         color: styleMap.popover.foregroundColor
                         wrapMode: Text.Wrap
                     }
@@ -194,15 +194,9 @@ Item {
                 id: speed
                 anchors.verticalCenter: parent.verticalCenter
                 text: Converter.readableSpeed(navigator.currentSpeed > 0 ? navigator.currentSpeed : 0.0)
-                color: styleMap.popover.foregroundColor
-                font.pointSize: units.fs("x-large")
-            }
-            Label {
-                id: maxspeed
-                anchors.verticalCenter: parent.verticalCenter
-                text: navigator.maximumSpeed > 0 ? Converter.readableSpeed(navigator.maximumSpeed) : ""
-                color: styleMap.popover.highlightedColor
-                font.pointSize: units.fs("medium")
+                color: (navigator.maximumSpeed > 0 && navigator.maximumSpeed < (navigator.currentSpeed - 10.0)
+                        ? "red" : styleMap.popover.foregroundColor)
+                font.pixelSize: units.fs("x-large")
             }
             MapIcon {
                 anchors.verticalCenter: parent.verticalCenter
@@ -226,7 +220,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 text: navigator.arrivalEstimate + " ~ " + Converter.panelDistance(navigator.remainingDistance)
                 color: styleMap.popover.foregroundColor
-                font.pointSize: units.fs("medium")
+                font.pixelSize: units.fs("large")
             }
         }
     }
